@@ -6,6 +6,7 @@ export const PhotoSchema = new Schema({
   name: { type: String, required: true },
   description: { type: String },
   keywords: { type: String }, // Almacena palabras clave separadas por comas
+  sold: {type: Boolean, default: false}
 });
 
 export interface Photo extends Document {
@@ -13,4 +14,5 @@ export interface Photo extends Document {
   name: string;
   description: string;
   keywords: string;
+  sold: boolean;
 }

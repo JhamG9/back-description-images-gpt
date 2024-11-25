@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Put, Param } from '@nestjs/common';
 import { PhotoService } from './photo.service';
 
 @Controller('photos')
@@ -20,5 +20,10 @@ export class PhotoController {
   @Get('search')
   async findByName(@Query('name') name: string) {
     return this.photoService.findByName(name);
+  }
+
+  @Put('sold/:id')
+  async markAsSold(@Param('id') id: string) {
+    return this.photoService.markAsSold(id);
   }
 }
