@@ -9,10 +9,16 @@ export class PhotoController {
     dangerouslyAllowBrowser: true
   });
 
-  folderPhotos = 'museo-moneda';
-  keywords = 'palomino, palomino la guajira, la guajira, la guajira colombia, guajira colombia, colombia, beach, travel, tourism, tranquility, horizon, ecology, wilderness, scenic, paradise, wayuu';
-  place = 'Palomino, La Guajira, Colombia';
+
+  IS_EDITORIAL = true;
+  folderPhotos = 'acuario-santa-marta';
+  keywords = 'aquarium, aquarium santa marta, marine life, animals, colombia, santa marta, vacations, marine life colombia, nature, magdalena, magdalena colombia';
+  place = 'Acuario Santa Marta, Magdalena, Colombia';
   prompt = `Genera un título en inglés describiendo lo que hay en la imagen adjunta, con una extensión máxima de 200 caracteres para Shutterstock y Adobe Stock. La ubicación del lugar es: ${this.place}. Proporciona exactamente 50 palabras clave en inglés en un solo párrafo, separadas por comas, sin tildes y todas en minúsculas. Usa las siguientes palabras clave y asegúrate de que cada una esté separada por comas, incluso las que tu agregues: ${this.keywords}. Busca imágenes relacionadas a la imagen en la web para mejorar las palabras clave para Shutterstock y Adobe Stock. Usa palabras sencillas y fáciles de leer. Asegúrate de que todas las palabras clave estén separadas por comas y si es necesario agrega palabras para completar las 50 palabras claves. Tómate tu tiempo en hacerlo y asegúrate de que la respuesta sea precisa y exacta`;
+
+  // EDITORIAL
+  dateEditorial = 'July 3 2024';
+  promptEditorial = `Genera un título en inglés describiendo lo que hay en la imagen adjunta, con una extensión máxima de 200 caracteres para Shutterstock y Adobe Stock. Tambien es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar" La ubicación del lugar es: ${this.place}. Proporciona exactamente 50 palabras clave en inglés en un solo párrafo, separadas por comas, sin tildes y todas en minúsculas. Usa las siguientes palabras clave y asegúrate de que cada una esté separada por comas, incluso las que tu agregues: ${this.keywords}. Busca imágenes relacionadas a la imagen en la web para mejorar las palabras clave para Shutterstock y Adobe Stock. Usa palabras sencillas y fáciles de leer. Asegúrate de que todas las palabras clave estén separadas por comas y si es necesario agrega palabras para completar las 50 palabras claves. Tómate tu tiempo en hacerlo y asegúrate de que la respuesta sea precisa y exacta`;
 
   constructor(private readonly photoService: PhotoService) { }
 
@@ -34,7 +40,7 @@ export class PhotoController {
     if (data.length > 0) {
       return data;
     } else {
-      const imagePath = `./public/museo-moneda/${name}`;
+      const imagePath = `./public/${this.folderPhotos}/${name}`;
       const base64Image = await this.photoService.convertImageToBase64(imagePath);
       const completion: any = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -42,7 +48,7 @@ export class PhotoController {
           {
             "role": "user",
             "content": [
-              { "type": "text", "text": this.prompt },
+              { "type": "text", "text": this.IS_EDITORIAL ? this.promptEditorial : this.prompt },
               {
                 "type": "image_url",
                 "image_url": { url: base64Image }
