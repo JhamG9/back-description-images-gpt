@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { Photo } from './photo.schema';
 import * as fs from 'fs';
 import * as path from 'path';
-import OpenAI from "openai";
 
 
 @Injectable()
@@ -49,4 +48,27 @@ export class PhotoService {
       throw new Error('Could not convert image to base64');
     }
   }
+
+  extractTitleAndKeywords(inputString) {
+    try {
+        // Buscar el JSON dentro del string usando una expresión regular
+        const jsonMatch = inputString.match(/\{.*?\}/s);
+        
+        if (jsonMatch) {
+            const jsonString = jsonMatch[0]; // Obtener el JSON como string
+            const jsonObject = JSON.parse(jsonString); // Convertirlo en objeto
+            
+            // Extraer title y keywords si existen
+            return {
+                title: jsonObject.title || "",
+                keywords: jsonObject.keywords || ""
+            };
+        }
+    } catch (error) {
+        console.error("Error parsing JSON:", error);
+    }
+
+    return { title: "", keywords: "" };
+}
+
 }
