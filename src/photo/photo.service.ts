@@ -4,13 +4,39 @@ import { Model } from 'mongoose';
 import { Photo } from './photo.schema';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as sharp from 'sharp';
 
 
 @Injectable()
 export class PhotoService {
+  private compressedFolder = './public/compressed'; 
+
   constructor(
     @InjectModel('Photo') private readonly photoModel: Model<Photo>,
-  ) {}
+  ) {
+    if (!fs.existsSync(this.compressedFolder)) {
+      fs.mkdirSync(this.compressedFolder, { recursive: true });
+    }
+  }
+
+  async compressImage(imagePath: string): Promise<string> {
+    const fileName = path.basename(imagePath);
+    const outputPath = path.join(this.compressedFolder, fileName);
+
+    try {
+      await sharp(imagePath)
+        .resize(800) // Redimensionar a un ancho máximo de 800px (ajústalo según tu necesidad)
+        .jpeg({ quality: 70 }) // Convertir a JPEG con 70% de calidad
+        .toFile(outputPath);
+
+      console.log(`Imagen comprimida: ${outputPath}`);
+      return outputPath;
+    } catch (error) {
+      console.error('Error al comprimir la imagen:', error);
+      throw new Error('Error al comprimir la imagen');
+    }
+  }
+
 
   async create(photoDto: { name: string; description?: string; keywords?: string }): Promise<Photo> {
     const newPhoto = new this.photoModel(photoDto);
