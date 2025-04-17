@@ -38,7 +38,7 @@ export class PhotoService {
   }
 
 
-  async create(photoDto: { name: string; description?: string; keywords?: string }): Promise<Photo> {
+  async create(photoDto: { name: string; description?: string; keywords?: string, categoryOne?: number, categoryTwo?: number }): Promise<Photo> {
     const newPhoto = new this.photoModel(photoDto);
     return newPhoto.save();
   }
@@ -87,7 +87,9 @@ export class PhotoService {
             // Extraer title y keywords si existen
             return {
                 title: jsonObject.title || "",
-                keywords: jsonObject.keywords || ""
+                keywords: jsonObject.keywords || "",
+                categoryOne: jsonObject.categoryOne || "",
+                categoryTwo: jsonObject.categoryTwo || "",
             };
         }
     } catch (error) {
