@@ -6,20 +6,21 @@ import OpenAI from 'openai';
 export class PhotoController {
   openai = new OpenAI({
     apiKey:
-      '',
+      'Token ChatGpt',
     dangerouslyAllowBrowser: true,
   });
 
-  IS_EDITORIAL = true; // Si la foto es de tipo editorial o comercial
+  IS_EDITORIAL = false; // Si la foto es de tipo editorial o comercial
 
-  folderPhotos = 'jaime-duque'; // fotos en la carpeta /public/sachica
+  folderPhotos = 'bogota'; // fotos en la carpeta /public/sachica
   keywords =
-    'jaime duque, jaime duque park foundation, jaime duque bogota, jaime duque park, cundinamarca, cundinamarca colombia, bogota, bogota colombia, colombia tourism, colombia, vacations in colombia, tourism'; // Palabras claves base
-  place = 'Jaime Duque Park'; // Lugar de las fotos
+    'bogota, cundinamarca, cundinamarca colombia, bogota, bogota colombia, colombia tourism, colombia, vacations in colombia, tourism, aerial view bogota'; // Palabras claves base
+  place = 'Bogotá, Colombia'; // Lugar de las fotos
   prompt = `Analiza la imagen adjunta y genera: 
-  1️⃣ Un título en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock.
-  2️⃣ 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
-  
+  1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles
+  2. Una descrición en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock.
+  3. 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
+   
   📌 Ubicación: ${this.place}.
   🔎 Usa referencias visuales para mejorar la precisión de palabras clave y recuerda que son 50 palabras claves.
 
@@ -58,6 +59,7 @@ export class PhotoController {
 
   {
     "title": "",
+    "description": "",
     "keywords": "",
     "categoryOne": value,
     "categoryTwo": value
@@ -68,8 +70,9 @@ export class PhotoController {
   // EDITORIAL
   dateEditorial = 'April 30 2024';
   promptEditorial = `Analiza la imagen adjunta y genera: 
-  1️⃣ Un título en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock. Tambien es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar"
-  2️⃣ 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
+  1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles.
+  2. Una descripción en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock. Tambien es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar"
+  3. 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
   
   📌 Ubicación: ${this.place}.
   🔎 Usa referencias visuales para mejorar la precisión de palabras clave y recuerda que son 50 palabras claves.
@@ -109,6 +112,7 @@ export class PhotoController {
 
   {
     "title": "",
+    "description": "",
     "keywords": "",
     "categoryOne": value,
     "categoryTwo": value
@@ -118,7 +122,7 @@ export class PhotoController {
 
 
   // TODO: Cambiar respuesta a JSON con formato: {title: '', keywords: ''}
-  constructor(private readonly photoService: PhotoService) {}
+  constructor(private readonly photoService: PhotoService) { }
 
   @Post()
   async create(
@@ -162,16 +166,16 @@ export class PhotoController {
       });
       const dataResponse = completion.choices[0].message.content;
 
-
-      const { title, keywords, categoryOne, categoryTwo } =
+      const { title, description, keywords, categoryOne, categoryTwo } =
         this.photoService.extractTitleAndKeywords(dataResponse);
 
-        console.log({title, keywords, categoryOne, categoryTwo});
-        
+      console.log({ title, description, keywords, categoryOne, categoryTwo });
+
 
       const dataSaved = await this.photoService.create({
         name,
-        description: title,
+        title,
+        description,
         keywords,
         categoryOne,
         categoryTwo
@@ -186,5 +190,5 @@ export class PhotoController {
   }
 
   @Get('load-data')
-  async loadDataPhotos() {}
+  async loadDataPhotos() { }
 }
