@@ -6,73 +6,72 @@ import OpenAI from 'openai';
 export class PhotoController {
   openai = new OpenAI({
     apiKey:
-      'Token ChatGpt',
+      '',
     dangerouslyAllowBrowser: true,
   });
 
   IS_EDITORIAL = false; // Si la foto es de tipo editorial o comercial
+  folderPhotos = 'casanare'; // fotos en la carpeta /public/sachica
+  keywords = 'casanare, colombia, nature'; // Palabras claves base
+  place = 'Casanare, Colombia'; // Lugar de las fotos
 
-  folderPhotos = 'bogota'; // fotos en la carpeta /public/sachica
-  keywords =
-    'bogota, cundinamarca, cundinamarca colombia, bogota, bogota colombia, colombia tourism, colombia, vacations in colombia, tourism, aerial view bogota'; // Palabras claves base
-  place = 'Bogotá, Colombia'; // Lugar de las fotos
-  prompt = `Analiza la imagen adjunta y genera: 
-  1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles
-  2. Una descrición en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock.
-  3. 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
-   
-  📌 Ubicación: ${this.place}.
-  🔎 Usa referencias visuales para mejorar la precisión de palabras clave y recuerda que son 50 palabras claves.
+  prompt = `Analiza la imagen adjunta y genera:
+    1. Un título breve, preciso y descriptivo en inglés.
+    2. Una descripción clara en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy.
+    3. 50 palabras clave en inglés, todas en minúsculas, sin tildes, separadas por comas. Usa **solo palabras individuales (no frases compuestas)**. No incluyas keywords duplicadas ni redundantes. Inclye estás palabras base: ${this.keywords}. Dejalas de primeras, y complétalas con términos relevantes que describan con precisión la imagen y su contexto.
 
-  📂 Selecciona la categoría principal (categoryOne) y una secundaria (categoryTwo) de esta lista según la imagen. Usa el **value** numérico de cada una:
+    📌 Ubicación: ${this.place}.
+    🔎 Usa referencias visuales de la imagen para mejorar la precisión de palabras clave. Asegúrate de que las keywords abarquen elementos físicos, conceptos, emociones, lugares, estilos, acciones y contexto.
 
-  [
-    { "label": "Abstract", "value": 26 },
-    { "label": "Animals/Wildlife", "value": 1 },
-    { "label": "Arts", "value": 11 },
-    { "label": "Backgrounds/Textures", "value": 3 },
-    { "label": "Beauty/Fashion", "value": 27 },
-    { "label": "Buildings/Landmarks", "value": 2 },
-    { "label": "Business/Finance", "value": 4 },
-    { "label": "Celebrities", "value": 31 },
-    { "label": "Education", "value": 5 },
-    { "label": "Food and drink", "value": 6 },
-    { "label": "Healthcare/Medical", "value": 7 },
-    { "label": "Holidays", "value": 8 },
-    { "label": "Industrial", "value": 10 },
-    { "label": "Interiors", "value": 21 },
-    { "label": "Miscellaneous", "value": 22 },
-    { "label": "Nature", "value": 12 },
-    { "label": "Objects", "value": 9 },
-    { "label": "Parks/Outdoor", "value": 25 },
-    { "label": "People", "value": 13 },
-    { "label": "Religion", "value": 14 },
-    { "label": "Science", "value": 15 },
-    { "label": "Signs/Symbols", "value": 17 },
-    { "label": "Sports/Recreation", "value": 18 },
-    { "label": "Technology", "value": 16 },
-    { "label": "Transportation", "value": 0 },
-    { "label": "Vintage", "value": 24 }
-  ]
+    📂 Selecciona la categoría principal (categoryOne) y una secundaria (categoryTwo) desde la siguiente lista. Usa el **value numérico** de cada una:
 
-  📌 Responde **solo en formato JSON** con la siguiente estructura exacta:
+    [
+      { "label": "Abstract", "value": 26 },
+      { "label": "Animals/Wildlife", "value": 1 },
+      { "label": "Arts", "value": 11 },
+      { "label": "Backgrounds/Textures", "value": 3 },
+      { "label": "Beauty/Fashion", "value": 27 },
+      { "label": "Buildings/Landmarks", "value": 2 },
+      { "label": "Business/Finance", "value": 4 },
+      { "label": "Celebrities", "value": 31 },
+      { "label": "Education", "value": 5 },
+      { "label": "Food and drink", "value": 6 },
+      { "label": "Healthcare/Medical", "value": 7 },
+      { "label": "Holidays", "value": 8 },
+      { "label": "Industrial", "value": 10 },
+      { "label": "Interiors", "value": 21 },
+      { "label": "Miscellaneous", "value": 22 },
+      { "label": "Nature", "value": 12 },
+      { "label": "Objects", "value": 9 },
+      { "label": "Parks/Outdoor", "value": 25 },
+      { "label": "People", "value": 13 },
+      { "label": "Religion", "value": 14 },
+      { "label": "Science", "value": 15 },
+      { "label": "Signs/Symbols", "value": 17 },
+      { "label": "Sports/Recreation", "value": 18 },
+      { "label": "Technology", "value": 16 },
+      { "label": "Transportation", "value": 0 },
+      { "label": "Vintage", "value": 24 }
+    ]
 
-  {
-    "title": "",
-    "description": "",
-    "keywords": "",
-    "categoryOne": value,
-    "categoryTwo": value
-  }
+    📌 Devuelve la respuesta **solo en formato JSON** con la siguiente estructura exacta:
 
-  🔁 Los valores de categoryOne y categoryTwo deben ser seleccionados del listado según el contenido visual.`;
+    {
+      "title": "",
+      "description": "",
+      "keywords": "",
+      "categoryOne": value,
+      "categoryTwo": value
+    }
+
+  🔁 Los valores categoryOne y categoryTwo deben seleccionarse según el contenido visual.`;
 
   // EDITORIAL
   dateEditorial = 'April 30 2024';
   promptEditorial = `Analiza la imagen adjunta y genera: 
   1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles.
   2. Una descripción en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock. Tambien es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar"
-  3. 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
+  3. 50 palabras clave en inglés, todas en minúsculas, sin tildes, separadas por comas. Usa **solo palabras individuales (no frases compuestas)**. No incluyas keywords duplicadas ni redundantes. Incluye estás palabras base: ${this.keywords}. Dejalas de primeras, y complétalas con términos relevantes que describan con precisión la imagen y su contexto.
   
   📌 Ubicación: ${this.place}.
   🔎 Usa referencias visuales para mejorar la precisión de palabras clave y recuerda que son 50 palabras claves.
@@ -121,7 +120,6 @@ export class PhotoController {
   🔁 Los valores de categoryOne y categoryTwo deben ser seleccionados del listado según el contenido visual.`;
 
 
-  // TODO: Cambiar respuesta a JSON con formato: {title: '', keywords: ''}
   constructor(private readonly photoService: PhotoService) { }
 
   @Post()
