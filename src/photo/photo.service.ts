@@ -6,7 +6,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as sharp from 'sharp';
 
-
 @Injectable()
 export class PhotoService {
   private compressedFolder = './public/compressed'; 
@@ -26,12 +25,12 @@ export class PhotoService {
     try {
       await sharp(imagePath)
         .resize(800) // Redimensionar a un ancho máximo de 800px (ajústalo según tu necesidad)
-        .jpeg({ quality: 70 }) // Convertir a JPEG con 70% de calidad
+        .jpeg({ quality: 50 }) // Convertir a JPEG con 70% de calidad
         .toFile(outputPath);
 
       console.log(`Imagen comprimida: ${outputPath}`);
       return outputPath;
-    } catch (error) {
+    } catch (error) {      
       console.error('Error al comprimir la imagen:', error);
       throw new Error('Error al comprimir la imagen');
     }
