@@ -9,10 +9,10 @@ export class PhotoController {
   
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'san-agustin'; // fotos en la carpeta /public/
-  keywords = 'san agustin, archaeological, park, stone statues, pre columbian art, colombia, unesco world heritage, huila'; // Palabras claves base
-  place = 'San Agustin, Huila, Colombia'; // Lugar de las fotos
-  dateEditorial = 'September 20 2025';
+  folderPhotos = 'casanare'; // fotos en la carpeta /public/
+  keywords = 'casanare, colombia, nature'; // Palabras claves base
+  place = 'Casanare, Colombia'; // Lugar de las fotos
+  dateEditorial = 'April 30 2024';
 
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
@@ -46,15 +46,15 @@ export class PhotoController {
   private generatePrompt(isEditorial: boolean): string {
     const descriptionFormat = isEditorial 
       ? `Una descripción en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock. También es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar"`
-      : 'Una descrición en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock.';
+      : 'Una descripción clara en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy.';
 
     return `Analiza la imagen adjunta y genera: 
   1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles
   2. ${descriptionFormat}
-  3. 50 palabras clave en inglés, separadas por comas, sin tildes y en minúsculas. Incluye estas palabras base: ${this.keywords}. Completa con términos relevantes según la imagen y palabras claves base.  
+  3. 50 palabras clave en inglés, todas en minúsculas, sin tildes, separadas por comas. Usa **solo palabras individuales (no frases compuestas)**. No incluyas keywords duplicadas ni redundantes. Incluye estas palabras base: ${this.keywords}. Déjalas de primeras, y complétalas con términos relevantes que describan con precisión la imagen y su contexto.
    
   📌 Ubicación: ${this.place}.
-  🔎 Usa referencias visuales para mejorar la precisión de palabras clave y recuerda que son 50 palabras claves.
+  🔎 Usa referencias visuales de la imagen para mejorar la precisión de palabras clave. Asegúrate de que las keywords abarquen elementos físicos, conceptos, emociones, lugares, estilos, acciones y contexto.
 
   📂 Selecciona la categoría principal (categoryOne) y una secundaria (categoryTwo) de esta lista según la imagen. Usa el **value** numérico de cada una:
 
@@ -69,9 +69,9 @@ export class PhotoController {
     "categoryOne": value,
     "categoryTwo": value
   }
+
   🔁 Los valores de categoryOne y categoryTwo deben ser seleccionados del listado según el contenido visual.`;
   }
-
 
   // TODO: Cambiar respuesta a JSON con formato: {title: '', keywords: ''}
   constructor(
@@ -131,7 +131,6 @@ export class PhotoController {
 
       console.log({ title, description, keywords, categoryOne, categoryTwo });
 
-
       const dataSaved = await this.photoService.create({
         name,
         title,
@@ -147,5 +146,26 @@ export class PhotoController {
   @Put('sold/:id')
   async markAsSold(@Param('id') id: string) {
     return this.photoService.markAsSold(id);
+  }
+
+  @Get('load-data')
+  async loadDataPhotos() { }
+
+  @Get('test-config')
+  async getDataTest() {
+    return {
+      status: 'success',
+      message: 'Environment variables loaded successfully',
+      config: {
+        isEditorial: this.isEditorial,
+        folderPhotos: this.folderPhotos,
+        place: this.place,
+        dateEditorial: this.dateEditorial,
+        keywords: this.keywords,
+        hasOpenAIKey: !!this.configService.get<string>('OPENAI_API_KEY'),
+        openAIKeyLength: this.configService.get<string>('OPENAI_API_KEY')?.length || 0,
+      },
+      timestamp: new Date().toISOString()
+    };
   }
 }
