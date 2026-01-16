@@ -8,11 +8,11 @@ export class PhotoController {
   private readonly openai: OpenAI;
   
   // Variables de desarrollo - cambiar aquí para hot reload
-  isEditorial = false; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'casanare'; // fotos en la carpeta /public/
-  keywords = 'casanare, colombia, nature'; // Palabras claves base
-  place = 'Casanare, Colombia'; // Lugar de las fotos
-  dateEditorial = 'April 30 2024';
+  isEditorial = true; // Si la foto es de tipo editorial o comercial
+  folderPhotos = 'zoo-cali'; // fotos en la carpeta /public/
+  keywords = 'zoo, cali, zoologico, animals, wildlife, colombia, valle del cauca, exotic animals'; // Palabras claves base
+  place = 'Zoológico de Cali, Cali, Valle del Cauca, Colombia'; // Lugar de las fotos
+  dateEditorial = 'November 23 2026';
 
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
@@ -137,7 +137,8 @@ export class PhotoController {
         description,
         keywords,
         categoryOne,
-        categoryTwo
+        categoryTwo,
+        editorial: this.isEditorial
       });
       return [dataSaved];
     }

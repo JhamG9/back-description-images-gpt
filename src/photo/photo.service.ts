@@ -37,7 +37,7 @@ export class PhotoService {
   }
 
 
-  async create(photoDto: { name: string; description?: string; keywords?: string, categoryOne?: number, categoryTwo?: number, title?: string }): Promise<Photo> {
+  async create(photoDto: { name: string; description?: string; keywords?: string, categoryOne?: number, categoryTwo?: number, title?: string, editorial?: boolean }): Promise<Photo> {
     const newPhoto = new this.photoModel(photoDto);
     return newPhoto.save();
   }
