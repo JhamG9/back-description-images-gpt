@@ -6,13 +6,13 @@ import OpenAI from 'openai';
 @Controller('photos')
 export class PhotoController {
   private readonly openai: OpenAI;
-  
+
   // Variables de desarrollo - cambiar aquí para hot reload
-  isEditorial = true; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'zoo-cali'; // fotos en la carpeta /public/
-  keywords = 'zoo, cali, zoologico, animals, wildlife, colombia, valle del cauca, exotic animals'; // Palabras claves base
-  place = 'Zoológico de Cali, Cali, Valle del Cauca, Colombia'; // Lugar de las fotos
-  dateEditorial = 'November 23 2026';
+  isEditorial = false; // Si la foto es de tipo editorial o comercial
+  folderPhotos = 'filandia'; // fotos en la carpeta /public/
+  keywords = 'filandia, quindio, colombia'; // Palabras claves base
+  place = 'Filandia, Quindio, Colombia'; // Lugar de las fotos
+  dateEditorial = 'December 7 2025';
 
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
@@ -44,33 +44,84 @@ export class PhotoController {
   ];
 
   private generatePrompt(isEditorial: boolean): string {
-    const descriptionFormat = isEditorial 
-      ? `Una descripción en inglés (máximo 200 caracteres) que describa claramente la escena, optimizado para Shutterstock y Adobe Stock. También es para uso editorial por lo cual el formato es: "${this.place} - ${this.dateEditorial} - Titulo a generar"`
-      : 'Una descripción clara en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy.';
+    const descriptionFormat = isEditorial
+      ? `Una descripción editorial en inglés (máximo 200 caracteres). El formato DEBE ser exactamente: "${this.place} - ${this.dateEditorial} - [titulo generado]". No incluyas opiniones, interpretaciones ni suposiciones.`
+      : `Una descripción natural y humana en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy. Evita frases genéricas, lenguaje publicitario y estructuras repetidas típicas de stock.`;
 
-    return `Analiza la imagen adjunta y genera: 
-  1. Un titulo que sea breve, preciso y descriptivo, este titulo debe de estar en ingles
-  2. ${descriptionFormat}
-  3. 50 palabras clave en inglés, todas en minúsculas, sin tildes, separadas por comas. Usa **solo palabras individuales (no frases compuestas)**. No incluyas keywords duplicadas ni redundantes. Incluye estas palabras base: ${this.keywords}. Déjalas de primeras, y complétalas con términos relevantes que describan con precisión la imagen y su contexto.
-   
-  📌 Ubicación: ${this.place}.
-  🔎 Usa referencias visuales de la imagen para mejorar la precisión de palabras clave. Asegúrate de que las keywords abarquen elementos físicos, conceptos, emociones, lugares, estilos, acciones y contexto.
+    return `
+Analiza la imagen adjunta y genera metadata ÚNICA basándote EXCLUSIVAMENTE en los elementos visibles.
 
-  📂 Selecciona la categoría principal (categoryOne) y una secundaria (categoryTwo) de esta lista según la imagen. Usa el **value** numérico de cada una:
+🚨 REGLAS CRÍTICAS (OBLIGATORIAS):
+- NO asumas información que no sea claramente visible en la imagen.
+- NO repitas estructuras de texto comunes en descripciones de stock.
+- Cada imagen debe parecer escrita por una persona diferente.
+- Si un elemento no es evidente, NO lo incluyas como keyword.
+- Evita palabras de relleno y términos genéricos.
+- No fuerces información solo para completar el número de keywords.
 
-  ${JSON.stringify(this.categories, null, 2)}
+🚫 REGLAS ESTRICTAS PARA KEYWORDS:
+- Usa SOLO palabras individuales reales y comunes en bancos de imágenes.
+- NO combines palabras para crear términos nuevos.
+- NO inventes palabras ni fusiones conceptos.
+- NO uses palabras largas o artificiales.
+- Si un concepto requiere dos palabras, sepáralo en keywords individuales
+  (ejemplo: "animal", "conservation").
+- Cada keyword debe poder existir por sí sola como término de búsqueda válido.
 
-  📌 Responde **solo en formato JSON** con la siguiente estructura exacta:
+Genera lo siguiente:
 
-  {
-    "title": "",
-    "description": "",
-    "keywords": "",
-    "categoryOne": value,
-    "categoryTwo": value
-  }
+1️⃣ TÍTULO
+- En inglés
+- Breve, preciso y factual
+- Debe incluir al menos UN detalle visual específico y claramente visible
+  (objeto, acción, color, clima, perspectiva, hora del día o emoción).
 
-  🔁 Los valores de categoryOne y categoryTwo deben ser seleccionados del listado según el contenido visual.`;
+2️⃣ DESCRIPCIÓN
+- ${descriptionFormat}
+- Debe mencionar al menos DOS detalles visuales concretos observables en la imagen.
+- Usa lenguaje descriptivo y natural, no comercial.
+
+3️⃣ KEYWORDS
+- Exactamente 50 palabras clave en inglés
+- Todas en minúsculas
+- Sin tildes
+- Separadas por comas
+- Usa SOLO palabras individuales (no frases compuestas)
+- No incluyas duplicados ni variaciones redundantes
+- Ordénalas por relevancia (las más importantes primero)
+- Comienza obligatoriamente con estas palabras base: ${this.keywords}
+
+Las keywords deben cubrir, cuando sea relevante:
+- elementos físicos visibles
+- acciones o estados
+- entorno y ubicación
+- conceptos o emociones
+- posibles usos comerciales o editoriales
+
+📍 Ubicación de referencia: ${this.place}
+
+4️⃣ CATEGORÍAS
+Selecciona:
+- categoryOne (principal)
+- categoryTwo (secundaria)
+
+Usa EXCLUSIVAMENTE los valores numéricos de la siguiente lista, según el sujeto visual predominante:
+
+${JSON.stringify(this.categories, null, 2)}
+
+📌 FORMATO DE RESPUESTA:
+Responde ÚNICAMENTE con un JSON válido, sin texto adicional, siguiendo EXACTAMENTE esta estructura:
+
+{
+  "title": "",
+  "description": "",
+  "keywords": "",
+  "categoryOne": value,
+  "categoryTwo": value
+}
+
+Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
+`;
   }
 
   // TODO: Cambiar respuesta a JSON con formato: {title: '', keywords: ''}
