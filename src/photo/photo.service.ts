@@ -5,6 +5,8 @@ import { Photo } from './photo.schema';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as sharp from 'sharp';
+import * as ffmpeg from 'fluent-ffmpeg';
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 
 @Injectable()
 export class PhotoService {
@@ -16,6 +18,48 @@ export class PhotoService {
     if (!fs.existsSync(this.compressedFolder)) {
       fs.mkdirSync(this.compressedFolder, { recursive: true });
     }
+    // Configurar ffmpeg usando @ffmpeg-installer/ffmpeg
+    console.log('ffmpeg path:', ffmpegInstaller.path);
+    try {
+      ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+      console.log('FFmpeg configurado correctamente en:', ffmpegInstaller.path);
+    } catch (error) {
+      console.error('Error configurando ffmpeg:', error);
+    }
+  }
+
+  async extractFirstFrame(videoPath: string): Promise<string> {
+    console.log('Intentando extraer frame de:', videoPath);
+    const fileName = path.basename(videoPath, path.extname(videoPath)) + '.jpg';
+    const outputPath = path.join(this.compressedFolder, fileName);
+    console.log('Output path:', outputPath);
+
+    // Verificar que el archivo de video existe
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Video no encontrado: ${videoPath}`);
+    }
+    console.log('Video encontrado, iniciando extracción...');
+
+    return new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .screenshots({
+          timestamps: ['00:00:01'],
+          filename: fileName,
+          folder: this.compressedFolder,
+          size: '1200x?'
+        })
+        .on('end', () => {
+          console.log(`Frame extraído: ${outputPath}`);
+          resolve(outputPath);
+        })
+        .on('error', (error, stdout, stderr) => {
+          console.error('Error detallado de ffmpeg:');
+          console.error('Error:', error.message);
+          console.error('stdout:', stdout);
+          console.error('stderr:', stderr);
+          reject(new Error(`Error al extraer frame del video: ${error.message}`));
+        });
+    });
   }
 
   async compressImage(imagePath: string): Promise<string> {

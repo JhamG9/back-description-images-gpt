@@ -9,10 +9,13 @@ export class PhotoController {
 
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'filandia'; // fotos en la carpeta /public/
+  folderPhotos = 'san-bernardo'; // fotos en la carpeta /public/
   keywords = 'filandia, quindio, colombia'; // Palabras claves base
   place = 'Filandia, Quindio, Colombia'; // Lugar de las fotos
   dateEditorial = 'December 7 2025';
+
+  // TODO: Cambiar  prompt cuando es video para que describa el frame
+  
 
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
@@ -153,8 +156,26 @@ Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
     if (data.length > 0) {
       return data;
     } else {
-      const imagePath = `./public/${this.folderPhotos}/${name}`;
-      const compressedPath = await this.photoService.compressImage(imagePath);
+      const filePath = `./public/${this.folderPhotos}/${name}`;
+      const isVideo = name.toLowerCase().endsWith('.mp4');
+      
+      console.log(`Procesando archivo: ${name}`);
+      console.log(`Es video: ${isVideo}`);
+      console.log(`Path completo: ${filePath}`);
+      
+      let compressedPath: string;
+      
+      if (isVideo) {
+        // Si es video, extraer el primer frame
+        console.log('Extrayendo frame del video...');
+        const framePath = await this.photoService.extractFirstFrame(filePath);
+        compressedPath = framePath; // El frame ya se extrae en tamaño reducido
+      } else {
+        // Si es imagen, comprimir normalmente
+        console.log('Comprimiendo imagen...');
+        compressedPath = await this.photoService.compressImage(filePath);
+      }
+      
       const base64Image =
         await this.photoService.convertImageToBase64(compressedPath);
       const completion: any = await this.openai.chat.completions.create({
