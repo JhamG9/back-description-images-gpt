@@ -9,14 +9,12 @@ export class PhotoController {
 
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'san-bernardo'; // fotos en la carpeta /public/
-  keywords = 'filandia, quindio, colombia'; // Palabras claves base
-  place = 'Filandia, Quindio, Colombia'; // Lugar de las fotos
-  dateEditorial = 'December 7 2025';
+  folderPhotos = 'aguaclara'; // fotos en la carpeta /public/
+  keywords = 'agua clara buenaventura, buenaventura, valle del cauca, colombia'; // Palabras claves base
+  place = 'Agua Clara, Buenaventura, Valle del Cauca, Colombia'; // Lugar de las fotos  
+  dateEditorial = 'January 12 2026';
 
-  // TODO: Cambiar  prompt cuando es video para que describa el frame
-  
-
+  notesVideo = ''
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
     { "label": "Animals/Wildlife", "value": 1 },
@@ -46,21 +44,27 @@ export class PhotoController {
     { "label": "Vintage", "value": 24 }
   ];
 
-  private generatePrompt(isEditorial: boolean): string {
+  private generatePrompt(isEditorial: boolean, isVideo: boolean): string {
     const descriptionFormat = isEditorial
       ? `Una descripción editorial en inglés (máximo 200 caracteres). El formato DEBE ser exactamente: "${this.place} - ${this.dateEditorial} - [titulo generado]". No incluyas opiniones, interpretaciones ni suposiciones.`
       : `Una descripción natural y humana en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy. Evita frases genéricas, lenguaje publicitario y estructuras repetidas típicas de stock.`;
 
+    const mediaInstruction = isVideo
+      ? `Estás analizando un VIDEO a través de múltiples frames extraídos en diferentes momentos temporales. Los frames están ordenados cronológicamente (inicio → medio → final). Considera TODOS los frames para entender el contenido completo del video, las acciones, movimientos y cambios que ocurren a lo largo del tiempo.`
+      : `La imagen adjunta es una fotografía.`;
     return `
-Analiza la imagen adjunta y genera metadata ÚNICA basándote EXCLUSIVAMENTE en los elementos visibles.
+    ${mediaInstruction}
+
+Analiza ${isVideo ? 'todos los frames del video' : 'la imagen adjunta'} y genera metadata ÚNICA basándote EXCLUSIVAMENTE en los elementos visibles.
 
 🚨 REGLAS CRÍTICAS (OBLIGATORIAS):
-- NO asumas información que no sea claramente visible en la imagen.
+- NO asumas información que no sea claramente visible ${isVideo ? 'en los frames' : 'en la imagen'}.
 - NO repitas estructuras de texto comunes en descripciones de stock.
-- Cada imagen debe parecer escrita por una persona diferente.
+- Cada ${isVideo ? 'video' : 'imagen'} debe parecer escrito por una persona diferente.
 - Si un elemento no es evidente, NO lo incluyas como keyword.
 - Evita palabras de relleno y términos genéricos.
 - No fuerces información solo para completar el número de keywords.
+${isVideo ? '- Para videos, incluye keywords relacionadas con el movimiento, acción y secuencia temporal visible en los frames.' : ''}
 
 🚫 REGLAS ESTRICTAS PARA KEYWORDS:
 - Usa SOLO palabras individuales reales y comunes en bancos de imágenes.
@@ -92,7 +96,7 @@ Genera lo siguiente:
 - Usa SOLO palabras individuales (no frases compuestas)
 - No incluyas duplicados ni variaciones redundantes
 - Ordénalas por relevancia (las más importantes primero)
-- Comienza obligatoriamente con estas palabras base: ${this.keywords}
+- Incluye obligatoriamente con estas palabras: ${this.keywords}
 
 Las keywords deben cubrir, cuando sea relevante:
 - elementos físicos visibles
@@ -158,41 +162,66 @@ Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
     } else {
       const filePath = `./public/${this.folderPhotos}/${name}`;
       const isVideo = name.toLowerCase().endsWith('.mp4');
-      
+
       console.log(`Procesando archivo: ${name}`);
       console.log(`Es video: ${isVideo}`);
       console.log(`Path completo: ${filePath}`);
-      
-      let compressedPath: string;
-      
+
+      let messageContent: any[] = [];
+
       if (isVideo) {
-        // Si es video, extraer el primer frame
-        console.log('Extrayendo frame del video...');
-        const framePath = await this.photoService.extractFirstFrame(filePath);
-        compressedPath = framePath; // El frame ya se extrae en tamaño reducido
+        // Si es video, extraer múltiples frames
+        console.log('Extrayendo múltiples frames del video...');
+        const framePaths = await this.photoService.extractVideoFrames(filePath, 5);
+        
+        // Agregar texto explicativo
+        messageContent.push({
+          type: 'text',
+          text: this.generatePrompt(this.isEditorial, isVideo),
+        });
+
+        // Agregar contexto de que son frames secuenciales
+        messageContent.push({
+          type: 'text',
+          text: `Las siguientes 5 imágenes son frames extraídos del MISMO VIDEO en orden cronológico (inicio, medio y final). Analiza todos los frames para generar metadata completa del video:`,
+        });
+
+        // Convertir y agregar cada frame
+        for (let i = 0; i < framePaths.length; i++) {
+          const base64Frame = await this.photoService.convertImageToBase64(framePaths[i]);
+          messageContent.push({
+            type: 'text',
+            text: `Frame ${i + 1} de ${framePaths.length}:`,
+          });
+          messageContent.push({
+            type: 'image_url',
+            image_url: { url: base64Frame },
+          });
+        }
       } else {
         // Si es imagen, comprimir normalmente
         console.log('Comprimiendo imagen...');
-        compressedPath = await this.photoService.compressImage(filePath);
+        const compressedPath = await this.photoService.compressImage(filePath);
+        const base64Image = await this.photoService.convertImageToBase64(compressedPath);
+        
+        messageContent = [
+          {
+            type: 'text',
+            text: this.generatePrompt(this.isEditorial, isVideo),
+          },
+          {
+            type: 'image_url',
+            image_url: { url: base64Image },
+          },
+        ];
       }
-      
-      const base64Image =
-        await this.photoService.convertImageToBase64(compressedPath);
+
       const completion: any = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: this.generatePrompt(this.isEditorial),
-              },
-              {
-                type: 'image_url',
-                image_url: { url: base64Image },
-              },
-            ],
+            content: messageContent,
           },
         ],
       });

@@ -28,6 +28,96 @@ export class PhotoService {
     }
   }
 
+  async extractVideoFrames(videoPath: string, frameCount: number = 5): Promise<string[]> {
+    console.log(`Extrayendo ${frameCount} frames de:`, videoPath);
+    
+    // Verificar que el archivo de video existe
+    if (!fs.existsSync(videoPath)) {
+      throw new Error(`Video no encontrado: ${videoPath}`);
+    }
+
+    // Primero, obtener la duración del video
+    const duration = await this.getVideoDuration(videoPath);
+    console.log(`Duración del video: ${duration} segundos`);
+
+    // Calcular timestamps distribuidos a lo largo del video
+    const timestamps = this.calculateTimestamps(duration, frameCount);
+    console.log('Timestamps a extraer:', timestamps);
+
+    const videoName = path.basename(videoPath, path.extname(videoPath));
+    const framePaths: string[] = [];
+
+    // Extraer cada frame
+    for (let i = 0; i < timestamps.length; i++) {
+      const fileName = `${videoName}_frame${i + 1}.jpg`;
+      const outputPath = path.join(this.compressedFolder, fileName);
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(videoPath)
+          .screenshots({
+            timestamps: [timestamps[i]],
+            filename: fileName,
+            folder: this.compressedFolder,
+            size: '800x?'
+          })
+          .on('end', () => {
+            console.log(`Frame ${i + 1} extraído: ${outputPath}`);
+            framePaths.push(outputPath);
+            resolve();
+          })
+          .on('error', (error) => {
+            console.error(`Error al extraer frame ${i + 1}:`, error.message);
+            reject(new Error(`Error al extraer frame ${i + 1}: ${error.message}`));
+          });
+      });
+    }
+
+    return framePaths;
+  }
+
+  private getVideoDuration(videoPath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(metadata.format.duration);
+        }
+      });
+    });
+  }
+
+  private calculateTimestamps(duration: number, frameCount: number): number[] {
+    const timestamps: number[] = [];
+    
+    // Siempre empezar en el segundo 1
+    timestamps.push(1);
+    
+    if (frameCount === 1) {
+      return timestamps;
+    }
+
+    // El último frame debe ser un poco antes del final (para evitar problemas)
+    const endTime = Math.max(1, duration - 1);
+    
+    if (frameCount === 2) {
+      timestamps.push(endTime);
+      return timestamps;
+    }
+
+    // Calcular los frames intermedios distribuidos uniformemente
+    const interval = (endTime - 1) / (frameCount - 1);
+    
+    for (let i = 1; i < frameCount - 1; i++) {
+      timestamps.push(1 + (interval * i));
+    }
+    
+    // Agregar el último frame
+    timestamps.push(endTime);
+    
+    return timestamps;
+  }
+
   async extractFirstFrame(videoPath: string): Promise<string> {
     console.log('Intentando extraer frame de:', videoPath);
     const fileName = path.basename(videoPath, path.extname(videoPath)) + '.jpg';
