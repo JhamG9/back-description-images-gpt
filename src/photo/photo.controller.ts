@@ -9,12 +9,15 @@ export class PhotoController {
 
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
-  folderPhotos = 'aguaclara'; // fotos en la carpeta /public/
-  keywords = 'agua clara buenaventura, buenaventura, valle del cauca, colombia'; // Palabras claves base
-  place = 'Agua Clara, Buenaventura, Valle del Cauca, Colombia'; // Lugar de las fotos  
-  dateEditorial = 'January 12 2026';
+  removeEditorial = true; // Si es true, elimina ubicacion y fecha de descripciones editoriales
+  folderPhotos = 'guaviare'; // fotos en la carpeta /public/
+  keywords = 'san jose, guaviare, colombia pictographs, rock art, chiribiquete, cerro azul, historical, america, archaeology'; // Palabras claves base
+  place = 'Cerro Azul, Guaviare, Colombia'; // Lugar de las fotos  
+  dateEditorial = 'May 1 2026';
+  // dateEditorial = '';
 
-  notesVideo = ''
+  additionalNotes = 'The person is a local guide';
+  //additionalNotes = '';
   private readonly categories = [
     { "label": "Abstract", "value": 26 },
     { "label": "Animals/Wildlife", "value": 1 },
@@ -46,78 +49,79 @@ export class PhotoController {
 
   private generatePrompt(isEditorial: boolean, isVideo: boolean): string {
     const descriptionFormat = isEditorial
-      ? `Una descripción editorial en inglés (máximo 200 caracteres). El formato DEBE ser exactamente: "${this.place} - ${this.dateEditorial} - [titulo generado]". No incluyas opiniones, interpretaciones ni suposiciones.`
-      : `Una descripción natural y humana en inglés (máximo 200 caracteres), optimizada para bancos de imágenes como Shutterstock, Adobe Stock y Alamy. Evita frases genéricas, lenguaje publicitario y estructuras repetidas típicas de stock.`;
+      ? `An editorial description in English (maximum 200 characters). The format MUST be exactly: "${this.place} - ${this.dateEditorial} - [generated title]". Do not include opinions, interpretations, or assumptions.`
+      : `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Shutterstock, Adobe Stock, and Alamy. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions.`;
 
     const mediaInstruction = isVideo
-      ? `Estás analizando un VIDEO a través de múltiples frames extraídos en diferentes momentos temporales. Los frames están ordenados cronológicamente (inicio → medio → final). Considera TODOS los frames para entender el contenido completo del video, las acciones, movimientos y cambios que ocurren a lo largo del tiempo.`
-      : `La imagen adjunta es una fotografía.`;
+      ? `You are analyzing a VIDEO through multiple frames extracted at different points in time. The frames are ordered chronologically (beginning -> middle -> end). Consider ALL frames to fully understand the video content, including actions, movements, and changes that occur throughout.`
+      : `The attached file is a photograph.`;
+
     return `
-    ${mediaInstruction}
+${mediaInstruction}
 
-Analiza ${isVideo ? 'todos los frames del video' : 'la imagen adjunta'} y genera metadata ÚNICA basándote EXCLUSIVAMENTE en los elementos visibles.
+Analyze ${isVideo ? 'all video frames' : 'the attached image'} and generate UNIQUE metadata based EXCLUSIVELY on visible elements.
 
-🚨 REGLAS CRÍTICAS (OBLIGATORIAS):
-- NO asumas información que no sea claramente visible ${isVideo ? 'en los frames' : 'en la imagen'}.
-- NO repitas estructuras de texto comunes en descripciones de stock.
-- Cada ${isVideo ? 'video' : 'imagen'} debe parecer escrito por una persona diferente.
-- Si un elemento no es evidente, NO lo incluyas como keyword.
-- Evita palabras de relleno y términos genéricos.
-- No fuerces información solo para completar el número de keywords.
-${isVideo ? '- Para videos, incluye keywords relacionadas con el movimiento, acción y secuencia temporal visible en los frames.' : ''}
+CRITICAL RULES (MANDATORY):
+- DO NOT assume information that is not clearly visible ${isVideo ? 'in the frames' : 'in the image'}.
+- DO NOT reuse common stock description structures.
+- Vary the syntactic structure of the description for each ${isVideo ? 'video' : 'image'} — do not always follow the same sentence pattern.
+- If an element is not clearly evident, DO NOT include it as a keyword.
+- Avoid filler words and generic terms.
+- Do not force keywords just to reach the target count.
+${isVideo ? '- For videos, include keywords related to movement, action, and the temporal sequence visible in the frames.' : ''}
 
-🚫 REGLAS ESTRICTAS PARA KEYWORDS:
-- Usa SOLO palabras individuales reales y comunes en bancos de imágenes.
-- NO combines palabras para crear términos nuevos.
-- NO inventes palabras ni fusiones conceptos.
-- NO uses palabras largas o artificiales.
-- Si un concepto requiere dos palabras, sepáralo en keywords individuales
-  (ejemplo: "animal", "conservation").
-- Cada keyword debe poder existir por sí sola como término de búsqueda válido.
+STRICT KEYWORD RULES:
+- Use ONLY real, individual words commonly used in stock platforms.
+- DO NOT combine words to create new compound terms.
+- DO NOT invent words or merge concepts.
+- DO NOT use long or artificial words.
+- If a concept requires two words, split it into individual keywords (e.g., "animal", "conservation").
+- Each keyword must stand alone as a valid search term.
 
-Genera lo siguiente:
+Generate the following:
 
-1️⃣ TÍTULO
-- En inglés
-- Breve, preciso y factual
-- Debe incluir al menos UN detalle visual específico y claramente visible
-  (objeto, acción, color, clima, perspectiva, hora del día o emoción).
+1. TITLE
+- In English
+- Short, precise, and factual
+- Must include at least ONE specific and clearly visible visual detail (object, action, color, weather, perspective, time of day, or emotion).
 
-2️⃣ DESCRIPCIÓN
+2. DESCRIPTION
 - ${descriptionFormat}
-- Debe mencionar al menos DOS detalles visuales concretos observables en la imagen.
-- Usa lenguaje descriptivo y natural, no comercial.
+- Must mention at least TWO concrete visual details observable in the ${isVideo ? 'video' : 'image'}.
+- Use descriptive and natural language, not commercial.
 
-3️⃣ KEYWORDS
-- Exactamente 50 palabras clave en inglés
-- Todas en minúsculas
-- Sin tildes
-- Separadas por comas
-- Usa SOLO palabras individuales (no frases compuestas)
-- No incluyas duplicados ni variaciones redundantes
-- Ordénalas por relevancia (las más importantes primero)
-- Incluye obligatoriamente con estas palabras: ${this.keywords}
+3. KEYWORDS
+- Between 45 and 50 keywords in English
+- All lowercase
+- No accents or special characters
+- Separated by commas
+- Use ONLY individual words (no compound phrases)
+- No duplicates or redundant variations
+- Ordered by relevance (most important first)
+- Must include the following words: ${this.keywords}
 
-Las keywords deben cubrir, cuando sea relevante:
-- elementos físicos visibles
-- acciones o estados
-- entorno y ubicación
-- conceptos o emociones
-- posibles usos comerciales o editoriales
+Keywords should cover, when relevant:
+- visible physical elements
+- actions or states
+- environment and location
+- concepts or emotions
+- potential commercial or editorial uses
 
-📍 Ubicación de referencia: ${this.place}
+Reference location: ${this.place}
 
-4️⃣ CATEGORÍAS
-Selecciona:
-- categoryOne (principal)
-- categoryTwo (secundaria)
+4. CATEGORIES
+Select:
+- categoryOne (primary)
+- categoryTwo (secondary)
 
-Usa EXCLUSIVAMENTE los valores numéricos de la siguiente lista, según el sujeto visual predominante:
+Use EXCLUSIVELY the numeric values from the following list, based on the predominant visual subject:
 
 ${JSON.stringify(this.categories, null, 2)}
 
-📌 FORMATO DE RESPUESTA:
-Responde ÚNICAMENTE con un JSON válido, sin texto adicional, siguiendo EXACTAMENTE esta estructura:
+${this.additionalNotes ? `Additional notes: ${this.additionalNotes}` : ''}
+
+RESPONSE FORMAT:
+Respond ONLY with valid JSON, no additional text, following EXACTLY this structure:
 
 {
   "title": "",
@@ -127,7 +131,16 @@ Responde ÚNICAMENTE con un JSON válido, sin texto adicional, siguiendo EXACTAM
   "categoryTwo": value
 }
 
-Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
+Example of expected output:
+{
+  "title": "Aerial View of Green Amazon Rainforest at Sunrise",
+  "description": "Dense tropical forest canopy stretching across the horizon under golden morning light in the Colombian Amazon.",
+  "keywords": "amazon, rainforest, aerial, canopy, tropical, forest, sunrise, green, colombia, nature, jungle, biodiversity, environment, landscape, morning, light, trees, wilderness, ecosystem, conservation",
+  "categoryOne": 12,
+  "categoryTwo": 5
+}
+
+Any non-compliance with the above rules invalidates the response.
 `;
   }
 
@@ -158,7 +171,39 @@ Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
   async findByName(@Query('name') name: string) {
     const data = await this.photoService.findByName(name);
     if (data.length > 0) {
-      return data;
+      const normalizeEditorialDescription = (value?: string) => {
+        if (!value) {
+          return value;
+        }
+
+        const parts = value.split(' - ');
+        if (parts.length >= 3) {
+          return parts.slice(2).join(' - ').trim();
+        }
+
+        return value;
+      };
+
+      const toPlainObject = (item: any) => {
+        if (item && typeof item.toObject === 'function') {
+          return item.toObject();
+        }
+
+        return item;
+      };
+
+      return data.map((item: any) => {
+        const plainItem = toPlainObject(item);
+
+        return {
+          ...plainItem,
+          description: this.removeEditorial
+            ? normalizeEditorialDescription(plainItem.description)
+            : plainItem.description,
+          editorial: this.removeEditorial ? false : plainItem.editorial,
+          };
+
+      });
     } else {
       const filePath = `./public/${this.folderPhotos}/${name}`;
       const isVideo = name.toLowerCase().endsWith('.mp4');
@@ -173,7 +218,7 @@ Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
         // Si es video, extraer múltiples frames
         console.log('Extrayendo múltiples frames del video...');
         const framePaths = await this.photoService.extractVideoFrames(filePath, 5);
-        
+
         // Agregar texto explicativo
         messageContent.push({
           type: 'text',
@@ -203,7 +248,7 @@ Cualquier incumplimiento de las reglas anteriores invalida la respuesta.
         console.log('Comprimiendo imagen...');
         const compressedPath = await this.photoService.compressImage(filePath);
         const base64Image = await this.photoService.convertImageToBase64(compressedPath);
-        
+
         messageContent = [
           {
             type: 'text',
