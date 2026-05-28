@@ -2,6 +2,8 @@ import { Controller, Post, Body, Get, Query, Put, Param } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PhotoService } from './photo.service';
 import OpenAI from 'openai';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Controller('photos')
 export class PhotoController {
@@ -10,42 +12,109 @@ export class PhotoController {
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
   removeEditorial = true; // Si es true, elimina ubicacion y fecha de descripciones editoriales
-  folderPhotos = 'guaviare'; // fotos en la carpeta /public/
-  keywords = 'san jose, guaviare, colombia pictographs, rock art, chiribiquete, cerro azul, historical, america, archaeology'; // Palabras claves base
-  place = 'Cerro Azul, Guaviare, Colombia'; // Lugar de las fotos  
+  folderPhotos = 'ia-test'; // fotos en la carpeta /public/
+  keywords = 'guaviare, colombia, radual del guayabero, san jose del guaviare, south america'; // Palabras claves base
+  place = 'Radual del Gayabero, Guaviare, Colombia'; // Lugar de las fotos  
   dateEditorial = 'May 1 2026';
+  isIA = true;
   // dateEditorial = '';
 
-  additionalNotes = 'The person is a local guide';
-  //additionalNotes = '';
+  // additionalNotes = 'es una manguera tirando agua, entonces es importante incluir palabras relacionadas con agua y cuidado del agua, conservación, naturaleza, etc. para mejorar la relevancia en búsquedas relacionadas con esos temas.';
+  additionalNotes = 'El barrio tiene forma de mariposa desde el aire con sus casas pintadas';
   private readonly categories = [
-    { "label": "Abstract", "value": 26 },
     { "label": "Animals/Wildlife", "value": 1 },
     { "label": "Arts", "value": 11 },
     { "label": "Backgrounds/Textures", "value": 3 },
-    { "label": "Beauty/Fashion", "value": 27 },
     { "label": "Buildings/Landmarks", "value": 2 },
     { "label": "Business/Finance", "value": 4 },
-    { "label": "Celebrities", "value": 31 },
     { "label": "Education", "value": 5 },
     { "label": "Food and drink", "value": 6 },
     { "label": "Healthcare/Medical", "value": 7 },
     { "label": "Holidays", "value": 8 },
     { "label": "Industrial", "value": 10 },
-    { "label": "Interiors", "value": 21 },
-    { "label": "Miscellaneous", "value": 22 },
     { "label": "Nature", "value": 12 },
     { "label": "Objects", "value": 9 },
-    { "label": "Parks/Outdoor", "value": 25 },
     { "label": "People", "value": 13 },
     { "label": "Religion", "value": 14 },
     { "label": "Science", "value": 15 },
     { "label": "Signs/Symbols", "value": 17 },
     { "label": "Sports/Recreation", "value": 18 },
     { "label": "Technology", "value": 16 },
-    { "label": "Transportation", "value": 0 },
-    { "label": "Vintage", "value": 24 }
+    { "label": "Transportation", "value": 19 }
   ];
+
+  private generateIAPrompt(): string {
+    const descriptionFormat = `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Adobe Stock. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions. Do not mention location, date, or any real-world reference.`;
+
+    return `
+The attached file is an AI-generated image.
+
+Analyze the attached image and generate UNIQUE metadata based EXCLUSIVELY on visible elements.
+
+CRITICAL RULES (MANDATORY):
+- DO NOT assume information that is not clearly visible in the image.
+- DO NOT reuse common stock description structures.
+- Vary the syntactic structure of the description for each image — do not always follow the same sentence pattern.
+- If an element is not clearly evident, DO NOT include it as a keyword.
+- Avoid filler words and generic terms.
+- Do not force keywords just to reach the target count.
+- This is an AI-generated image. Do not include location, date, photographer, or any real-world reference in the description or keywords.
+
+STRICT KEYWORD RULES:
+- Use ONLY real, individual words commonly used in stock platforms.
+- DO NOT combine words to create new compound terms.
+- DO NOT invent words or merge concepts.
+- DO NOT use long or artificial words.
+- If a concept requires two words, split it into individual keywords (e.g., "animal", "conservation").
+- Each keyword must stand alone as a valid search term.
+
+Generate the following:
+
+1. TITLE
+- In English
+- Short, precise, and factual
+- Must include at least ONE specific and clearly visible visual detail (object, action, color, weather, perspective, time of day, or emotion).
+
+2. DESCRIPTION
+- ${descriptionFormat}
+- Must mention at least TWO concrete visual details observable in the image.
+- Use descriptive and natural language, not commercial.
+
+3. KEYWORDS
+- Between 45 and 50 keywords in English
+- All lowercase
+- No accents or special characters
+- Separated by commas
+- Use ONLY individual words (no compound phrases)
+- No duplicates or redundant variations
+- Ordered by relevance (most important first)
+
+Keywords should cover, when relevant:
+- visible physical elements
+- actions or states
+- environment and location
+- concepts or emotions
+- potential commercial or editorial uses
+
+RESPONSE FORMAT:
+Respond ONLY with valid JSON, no additional text, following EXACTLY this structure:
+
+{
+  "title": "",
+  "description": "",
+  "keywords": ""
+}
+
+Example of expected output:
+{
+  "title": "Roasted Coffee Beans in Ceramic Bowl at Morning Light",
+  "description": "Dark roasted coffee beans fill a handmade ceramic bowl on a rustic wooden surface, lit by warm natural morning light.",
+  "keywords": "coffee, beans, roasted, ceramic, bowl, wooden, rustic, morning, light, warm, dark, aroma, cafe, beverage, natural, texture, close, macro, brown, surface"
+}
+
+Any non-compliance with the above rules invalidates the response.
+`;
+  }
 
   private generatePrompt(isEditorial: boolean, isVideo: boolean): string {
     const descriptionFormat = isEditorial
@@ -222,7 +291,7 @@ Any non-compliance with the above rules invalidates the response.
         // Agregar texto explicativo
         messageContent.push({
           type: 'text',
-          text: this.generatePrompt(this.isEditorial, isVideo),
+          text: this.isIA ? this.generateIAPrompt() : this.generatePrompt(this.isEditorial, isVideo),
         });
 
         // Agregar contexto de que son frames secuenciales
@@ -252,7 +321,7 @@ Any non-compliance with the above rules invalidates the response.
         messageContent = [
           {
             type: 'text',
-            text: this.generatePrompt(this.isEditorial, isVideo),
+            text: this.isIA ? this.generateIAPrompt() : this.generatePrompt(this.isEditorial, isVideo),
           },
           {
             type: 'image_url',
@@ -284,7 +353,8 @@ Any non-compliance with the above rules invalidates the response.
         keywords,
         categoryOne,
         categoryTwo,
-        editorial: this.isEditorial
+        editorial: this.isEditorial,
+        isIA: this.isIA ? true : null,
       });
       return [dataSaved];
     }
@@ -296,7 +366,32 @@ Any non-compliance with the above rules invalidates the response.
   }
 
   @Get('load-data')
-  async loadDataPhotos() { }
+  async loadDataPhotos() {
+    const folderPath = path.resolve(`./public/${this.folderPhotos}`);
+
+    if (!fs.existsSync(folderPath)) {
+      return {
+        status: 'error',
+        message: `No existe la carpeta: ${folderPath}`,
+      };
+    }
+
+    const files = await fs.promises.readdir(folderPath);
+    const mediaFiles = files.filter((file) => {
+      const ext = path.extname(file).toLowerCase();
+      return ['.jpg', '.jpeg', '.png', '.webp', '.mp4'].includes(ext);
+    });
+
+    for (const fileName of mediaFiles) {
+      await this.findByName(fileName);
+    }
+
+    return {
+      status: 'success',
+      message: `Se procesaron ${mediaFiles.length} archivos`,
+      total: mediaFiles.length,
+    };
+  }
 
   @Get('test-config')
   async getDataTest() {

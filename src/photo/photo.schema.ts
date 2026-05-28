@@ -7,6 +7,7 @@ export const PhotoSchema = new Schema({
   title: {type: String, required: true},
   description: { type: String },
   keywords: { type: String }, // Almacena palabras clave separadas por comas
+  isIA: { type: Boolean, required: false, default: null },
   sold: {type: Boolean, default: false},
   editorial: {type: Boolean, required: true}, // Indica si la foto es editorial o comercial
   categoryOne: { type: Number, required: false }, // ID de la categoría principal
@@ -19,6 +20,7 @@ export interface Photo extends Document {
   title: string;
   description: string;
   keywords: string;
+  isIA: boolean | null;
   sold: boolean;
   editorial: boolean;
   categoryOne: number;
