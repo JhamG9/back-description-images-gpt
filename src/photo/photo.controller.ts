@@ -13,7 +13,7 @@ export class PhotoController {
   isEditorial = false; // Si la foto es de tipo editorial o comercial
   removeEditorial = true; // Si es true, elimina ubicacion y fecha de descripciones editoriales
   folderPhotos = 'ia-test'; // fotos en la carpeta /public/
-  keywords = 'guaviare, colombia, radual del guayabero, san jose del guaviare, south america'; // Palabras claves base
+  keywords = 'coffe, colombian coffe, colombia'; // Palabras claves base
   place = 'Radual del Gayabero, Guaviare, Colombia'; // Lugar de las fotos  
   dateEditorial = 'May 1 2026';
   isIA = true;
@@ -88,6 +88,9 @@ Generate the following:
 - Use ONLY individual words (no compound phrases)
 - No duplicates or redundant variations
 - Ordered by relevance (most important first)
+- Use these base keywords as contextual anchor for generation: ${this.keywords}
+- Prioritize base keywords when they are visually consistent with the image
+- Do not force unrelated base keywords if they are not visible
 
 Keywords should cover, when relevant:
 - visible physical elements
