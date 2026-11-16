@@ -68,7 +68,9 @@ export class PhotoController {
 
   // Adobe Stock acepta máximo 49 keywords; el resto 50. Usamos 49 para todos.
   private readonly maxKeywords = 49;
-  private readonly minKeywords = 40;
+  // Mínimo bajo a propósito: pedir muchas keywords hace que el modelo
+  // rellene con palabras que no se ven (summer, wildlife, adventure…).
+  private readonly minKeywords = 30;
 
   private readonly categories = [
     { label: 'Animals/Wildlife', value: 1 },
@@ -93,11 +95,22 @@ export class PhotoController {
   ];
 
   private readonly keywordRules = `KEYWORD RULES:
+- THE BUYER TEST: include a keyword only if a buyer who searches that exact term would be happy to find THIS image. If not, leave it out.
 - Use real search terms that buyers actually type on stock platforms.
-- Each keyword is either a single word OR a common two-word phrase (e.g., "coffee beans", "aerial view", "street food"). Never more than two words.
+- Each keyword is either a single word OR a common two-word phrase (e.g., "coffee beans", "aerial view", "cloud forest"). Never more than two words.
 - Use a two-word phrase only when it is an established search term; otherwise use single words.
 - DO NOT invent words or merge words into new compound terms.
-- No duplicates or near-duplicates (singular and plural of the same word count as duplicates).`;
+- Every keyword must appear only ONCE. Before answering, check the list for repeats.
+- No near-duplicates: singular/plural ("hill", "hills"), noun/adjective of the same root ("nature", "natural"; "ecology", "ecological"; "panorama", "panoramic"; "scenery", "scenic"). Keep only the most searched form.
+
+NEVER INCLUDE (common mistakes):
+- Seasons ("summer", "winter", "spring", "autumn") unless snow, autumn leaves or another season marker is clearly visible. Many places (e.g., the Andes, the equator) have no seasons.
+- Animals or "wildlife" unless an animal is clearly visible. People-related words ("tourist", "hiker", "travelers") unless a person is clearly visible.
+- Activities that are not happening in the image ("hiking", "adventure", "exploration", "camping") unless people, gear or a trail being used are visible.
+- Empty adjectives and filler: beauty, beautiful, freshness, picturesque, stunning, breathtaking, amazing, unique, view, scenery, wonderful, idyllic.
+- Weather or time of day you cannot clearly see.
+
+ORDER: first the base keywords, then the main visible subjects, then setting, colors, light and composition (e.g., "aerial view", "no people"), and at the end at most 5 concepts that the image clearly conveys (e.g., "tranquility", "conservation").`;
 
   constructor(
     private readonly photoService: PhotoService,
@@ -320,8 +333,14 @@ export class PhotoController {
 
   private generatePrompt(config: GenerationConfig, isVideo: boolean): string {
     const descriptionFormat = config.editorial
-      ? `An editorial description in English (maximum 200 characters). The format MUST be exactly: "${config.place} - ${config.date} - [generated title]". Do not include opinions, interpretations, or assumptions.`
-      : `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Shutterstock, Adobe Stock, and Alamy. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions.`;
+      ? `An editorial description in English (maximum 200 characters). The format MUST be exactly: "${config.place} - ${config.date} - [factual sentence describing what is visible]". Do not include opinions, interpretations, or assumptions.`
+      : `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Shutterstock, Adobe Stock, and Alamy.`;
+
+    const location = config.place
+      ? `LOCATION (given by the photographer, trust it): ${config.place}
+- Use it to name the place correctly in the title and description.
+- Write place names with their correct local spelling and accents exactly as given here or in the base keywords (e.g., "Páramo", "Bogotá", "Baños", "Quilotoa"). Never move or invent accents.`
+      : `- Write any place name with its correct local spelling exactly as it appears in the base keywords. Never invent accents.`;
 
     const mediaInstruction = isVideo
       ? `You are analyzing a VIDEO through multiple frames extracted at different points in time. The frames are ordered chronologically (beginning -> middle -> end). Consider ALL frames to fully understand the video content, including actions, movements, and changes that occur throughout.`
@@ -334,75 +353,38 @@ Analyze ${isVideo ? 'all video frames' : 'the attached image'} and generate UNIQ
 
 CRITICAL RULES (MANDATORY):
 - DO NOT assume information that is not clearly visible ${isVideo ? 'in the frames' : 'in the image'}.
-- DO NOT reuse common stock description structures.
-- Vary the syntactic structure of the description for each ${isVideo ? 'video' : 'image'} — do not always follow the same sentence pattern.
-- If an element is not clearly evident, DO NOT include it as a keyword.
-- Avoid filler words and generic terms.
+- Vary the sentence structure of the description — do not always follow the same pattern.
 ${isVideo ? '- For videos, include keywords related to movement, action, and the temporal sequence visible in the frames.' : ''}
+
+${location}
 
 ${this.keywordRules}
 
 Generate the following:
 
 1. TITLE
-- In English
-- Short, precise, and factual
-- Must include at least ONE specific and clearly visible visual detail (object, action, color, weather, perspective, time of day, or emotion).
+- In English, short, precise, and factual (maximum 70 characters).
+- Must include at least ONE specific and clearly visible visual detail (object, action, color, weather, perspective, or time of day).
+- Before answering, check the spelling of every word, especially place names.
 
 2. DESCRIPTION
 - ${descriptionFormat}
 - Must mention at least TWO concrete visual details observable in the ${isVideo ? 'video' : 'image'}.
-- Use descriptive and natural language, not commercial.
+- Plain, factual language. Never use: showcasing, showcases, captures, nestled, stunning, breathtaking, unique, beautiful, perfect, majestic.
 
 3. KEYWORDS
-- Between ${this.minKeywords} and ${this.maxKeywords} keywords in English, counting the base keywords. Aim for ${this.maxKeywords} when the image supports it; if there are fewer clearly relevant terms, stop at ${this.minKeywords} rather than adding filler.
-- All lowercase
-- No accents or special characters
-- Separated by commas
-- Ordered by relevance (most important first)
-- Start with these base keywords exactly as written (they may be multi-word place names; this is the only exception to the two-word limit): ${config.keywords}
-
-Keywords should cover, when relevant:
-- visible physical elements
-- actions or states
-- environment and location
-- concepts or emotions
-- potential commercial or editorial uses
-
-${config.place ? `Reference location: ${config.place}` : ''}
+- Between ${this.minKeywords} and ${this.maxKeywords} keywords in English, counting the base keywords. Quality over quantity: if only ${this.minKeywords} pass the buyer test, return ${this.minKeywords}.
+- All lowercase, no accents or special characters, separated by commas.
+- Start with these base keywords exactly as written (they may be multi-word place names; this is the only exception to the two-word limit): ${config.keywords || '(none)'}
 
 4. CATEGORIES
-Select:
-- categoryOne (primary)
-- categoryTwo (secondary)
+- categoryOne: the category of the main visible subject.
+- categoryTwo: a DIFFERENT category that also clearly applies to what is visible (e.g., a landscape with a road → Nature + Transportation; a church in a plaza → Buildings/Landmarks + Religion). For pure landscapes with nothing else, use Nature + Backgrounds/Textures.
+- NEVER choose Education, Science, Business/Finance, Healthcare/Medical, Technology or Holidays unless the image explicitly shows that theme (a classroom, a lab, money, a hospital, devices, a festivity).
+- Use EXCLUSIVELY the numeric values from this list:
+${this.categories.map((c) => `  ${c.value} = ${c.label}`).join('\n')}
 
-Use EXCLUSIVELY the numeric values from the following list, based on the predominant visual subject:
-
-${JSON.stringify(this.categories, null, 2)}
-
-${config.notes ? `Additional notes: ${config.notes}` : ''}
-
-RESPONSE FORMAT:
-Respond ONLY with valid JSON, no additional text, following EXACTLY this structure:
-
-{
-  "title": "",
-  "description": "",
-  "keywords": "",
-  "categoryOne": value,
-  "categoryTwo": value
-}
-
-Example of expected output:
-{
-  "title": "Aerial View of Green Amazon Rainforest at Sunrise",
-  "description": "Dense tropical forest canopy stretching across the horizon under golden morning light in the Colombian Amazon.",
-  "keywords": "amazon, rainforest, aerial view, canopy, tropical forest, sunrise, green, colombia, nature, jungle, biodiversity, environment, landscape, morning light, trees, wilderness, ecosystem, conservation",
-  "categoryOne": 12,
-  "categoryTwo": 5
-}
-
-Any non-compliance with the above rules invalidates the response.
+${config.notes ? `PHOTOGRAPHER NOTES (context you can trust): ${config.notes}` : ''}
 `;
   }
 

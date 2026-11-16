@@ -254,8 +254,8 @@ export class PhotoService {
   /**
    * Limpia las keywords en código para no depender de que el modelo obedezca:
    * minúsculas, sin tildes ni caracteres especiales, keywords base primero,
-   * máximo 2 palabras por keyword generada, sin duplicados (incluye
-   * singular/plural) y recortadas a `max`.
+   * máximo 2 palabras por keyword generada, sin relleno ni artículos sueltos,
+   * sin duplicados (incluye singular/plural) y recortadas a `max`.
    */
   normalizeKeywords(raw: string, baseKeywords: string[] = [], max = 49): string {
     const clean = (value: string) =>
@@ -274,11 +274,18 @@ export class PhotoService {
         .map((word) => (word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word))
         .join(' ');
 
+    // Relleno que nunca ayuda a vender: se descarta aunque el modelo lo ponga
+    const filler = new Set([
+      'beauty', 'beautiful', 'freshness', 'picturesque', 'stunning',
+      'breathtaking', 'amazing', 'unique', 'wonderful', 'idyllic',
+      'view', 'scenery', 'gorgeous', 'perfect', 'majestic',
+    ]);
+
     const result: string[] = [];
     const seen = new Set<string>();
     const add = (keyword: string) => {
       const key = dedupeKey(keyword);
-      if (!keyword || seen.has(key)) return;
+      if (!keyword || seen.has(key) || filler.has(keyword)) return;
       seen.add(key);
       result.push(keyword);
     };
@@ -286,16 +293,18 @@ export class PhotoService {
     // Las base se respetan tal cual (pueden ser nombres de lugar de 3+ palabras)
     baseKeywords.map(clean).forEach(add);
 
+    // Artículos y conectores (inglés y español) que nunca sirven solos
+    const stopWords = new Set([
+      'a', 'an', 'the', 'of', 'in', 'on', 'at', 'under', 'over', 'with', 'and',
+      'or', 'for', 'to', 'by', 'from', 'la', 'las', 'el', 'los', 'de', 'del', 'y',
+    ]);
+
     for (const item of raw.split(',')) {
       const keyword = clean(item);
-      if (!keyword) continue;
-      const words = keyword.split(' ');
-      if (words.length <= 2) {
+      if (!keyword || stopWords.has(keyword)) continue;
+      // Frases de 3+ palabras se descartan: partirlas deja basura como "las"
+      if (keyword.split(' ').length <= 2) {
         add(keyword);
-      } else {
-        // Frase demasiado larga: se separa en palabras sueltas sin conectores
-        const stopWords = new Set(['a', 'an', 'the', 'of', 'in', 'on', 'at', 'under', 'over', 'with', 'and', 'or', 'for', 'to', 'by', 'from']);
-        words.filter((word) => !stopWords.has(word)).forEach(add);
       }
     }
 
