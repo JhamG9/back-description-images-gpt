@@ -3,10 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  ConflictException,
   NotFoundException,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { PhotoService } from './photo.service';
 import OpenAI from 'openai';
@@ -18,8 +22,42 @@ import {
   SearchRequest,
 } from './photo.types';
 
+// multer viene incluido con @nestjs/platform-express
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const multer = require('multer');
+
 const PUBLIC_DIR = path.resolve('./public');
 const MEDIA_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.mp4'];
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB (videos)
+
+/**
+ * multer decodifica el nombre como latin1; lo pasamos a UTF-8 para que los
+ * nombres con tildes queden igual que el original (la extensión busca por nombre).
+ */
+const uploadName = (file: { originalname: string }) =>
+  path.basename(Buffer.from(file.originalname, 'latin1').toString('utf8'));
+
+const uploadOptions = {
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    const name = uploadName(file);
+    if (!MEDIA_EXTENSIONS.includes(path.extname(name).toLowerCase())) {
+      return cb(new BadRequestException(`Tipo de archivo no permitido: ${name}`), false);
+    }
+    // Nunca sobrescribe: si ya existe, se avisa
+    if (fs.existsSync(path.join(PUBLIC_DIR, name))) {
+      return cb(new ConflictException(`${name} ya existe en /public`), false);
+    }
+    cb(null, true);
+  },
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+      cb(null, PUBLIC_DIR);
+    },
+    filename: (_req, file, cb) => cb(null, uploadName(file)),
+  }),
+};
 
 @Controller('photos')
 export class PhotoController {
@@ -116,6 +154,45 @@ export class PhotoController {
 
     const saved = await this.generate(name, this.validateConfig(config));
     return [this.adaptForPlatform(saved, platform)];
+  }
+
+  /**
+   * Sube un archivo a /public (uno por petición, para mostrar progreso por
+   * archivo). Si `generate` es "true", genera los metadatos en el momento con
+   * la configuración enviada (JSON en el campo `config`).
+   */
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', uploadOptions))
+  async upload(
+    @UploadedFile() file: any,
+    @Body() body: { generate?: string; config?: string },
+  ) {
+    if (!file) {
+      throw new BadRequestException('No llegó ningún archivo');
+    }
+    const name = file.filename;
+
+    if (body?.generate !== 'true') {
+      return { name, uploaded: true, generated: false };
+    }
+
+    let config: GenerationConfig | undefined;
+    try {
+      config = body.config ? JSON.parse(body.config) : undefined;
+    } catch {
+      throw new BadRequestException('La configuración no es JSON válido');
+    }
+
+    // Si la generación falla, el archivo ya quedó subido: se informa sin borrarlo
+    try {
+      const existing = await this.photoService.findByName(name);
+      const photo = existing.length > 0
+        ? existing[0]
+        : await this.generate(name, this.validateConfig(config));
+      return { name, uploaded: true, generated: true, title: photo.title };
+    } catch (error) {
+      return { name, uploaded: true, generated: false, error: error.message };
+    }
   }
 
   /** Genera de una vez todos los archivos que están en /public. */
