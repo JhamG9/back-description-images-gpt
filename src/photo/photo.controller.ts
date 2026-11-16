@@ -1,47 +1,29 @@
-import { Controller, Post, Body, Get, Query, Put, Param } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PhotoService } from './photo.service';
 import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  GenerationConfig,
+  PLATFORMS_WITHOUT_EDITORIAL,
+  SearchRequest,
+} from './photo.types';
+
+const PUBLIC_DIR = path.resolve('./public');
+const MEDIA_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.mp4'];
 
 @Controller('photos')
 export class PhotoController {
   private readonly openai: OpenAI;
-
-  // Variables de desarrollo - cambiar aquí para hot reload
-  isEditorial = false; // Si la foto es de tipo editorial o comercial
-  removeEditorial = true; // Si es true, elimina ubicacion y fecha de descripciones editoriales
-  folderPhotos = 'las-moyas'; // fotos en la carpeta /public/
-  keywords = 'bogota, las moyas, moyas bogota, eastern hills, colombia, paramo, las moyas paramo, mountain, panoramic'; // Palabras claves base
-  place = 'Las Moyas Trail, Bogotá, Colombia'; // Lugar de las fotos  
-  dateEditorial = 'May 1 2026';
-  isIA = false;
-  // dateEditorial = '';
-
-  // additionalNotes = 'es una manguera tirando agua, entonces es importante incluir palabras relacionadas con agua y cuidado del agua, conservación, naturaleza, etc. para mejorar la relevancia en búsquedas relacionadas con esos temas.';
-  additionalNotes = 'El barrio tiene forma de mariposa desde el aire con sus casas pintadas';
-  private readonly categories = [
-    { "label": "Animals/Wildlife", "value": 1 },
-    { "label": "Arts", "value": 11 },
-    { "label": "Backgrounds/Textures", "value": 3 },
-    { "label": "Buildings/Landmarks", "value": 2 },
-    { "label": "Business/Finance", "value": 4 },
-    { "label": "Education", "value": 5 },
-    { "label": "Food and drink", "value": 6 },
-    { "label": "Healthcare/Medical", "value": 7 },
-    { "label": "Holidays", "value": 8 },
-    { "label": "Industrial", "value": 10 },
-    { "label": "Nature", "value": 12 },
-    { "label": "Objects", "value": 9 },
-    { "label": "People", "value": 13 },
-    { "label": "Religion", "value": 14 },
-    { "label": "Science", "value": 15 },
-    { "label": "Signs/Symbols", "value": 17 },
-    { "label": "Sports/Recreation", "value": 18 },
-    { "label": "Technology", "value": 16 },
-    { "label": "Transportation", "value": 19 }
-  ];
 
   // Modelo de visión configurable desde .env (OPENAI_MODEL)
   private readonly model: string;
@@ -50,6 +32,28 @@ export class PhotoController {
   private readonly maxKeywords = 49;
   private readonly minKeywords = 40;
 
+  private readonly categories = [
+    { label: 'Animals/Wildlife', value: 1 },
+    { label: 'Arts', value: 11 },
+    { label: 'Backgrounds/Textures', value: 3 },
+    { label: 'Buildings/Landmarks', value: 2 },
+    { label: 'Business/Finance', value: 4 },
+    { label: 'Education', value: 5 },
+    { label: 'Food and drink', value: 6 },
+    { label: 'Healthcare/Medical', value: 7 },
+    { label: 'Holidays', value: 8 },
+    { label: 'Industrial', value: 10 },
+    { label: 'Nature', value: 12 },
+    { label: 'Objects', value: 9 },
+    { label: 'People', value: 13 },
+    { label: 'Religion', value: 14 },
+    { label: 'Science', value: 15 },
+    { label: 'Signs/Symbols', value: 17 },
+    { label: 'Sports/Recreation', value: 18 },
+    { label: 'Technology', value: 16 },
+    { label: 'Transportation', value: 19 },
+  ];
+
   private readonly keywordRules = `KEYWORD RULES:
 - Use real search terms that buyers actually type on stock platforms.
 - Each keyword is either a single word OR a common two-word phrase (e.g., "coffee beans", "aerial view", "street food"). Never more than two words.
@@ -57,123 +61,189 @@ export class PhotoController {
 - DO NOT invent words or merge words into new compound terms.
 - No duplicates or near-duplicates (singular and plural of the same word count as duplicates).`;
 
-  private buildResponseSchema(withCategories: boolean) {
-    const properties: Record<string, any> = {
-      title: { type: 'string' },
-      description: { type: 'string' },
-      keywords: {
-        type: 'string',
-        description: 'Comma-separated keywords, most relevant first',
-      },
-    };
+  constructor(
+    private readonly photoService: PhotoService,
+    private readonly configService: ConfigService,
+  ) {
+    this.model =
+      this.configService.get<string>('OPENAI_MODEL') || 'gpt-4.1-mini';
+    this.openai = new OpenAI({
+      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
+    });
+  }
 
-    if (withCategories) {
-      const values = this.categories.map((c) => c.value);
-      properties.categoryOne = { type: 'integer', enum: values };
-      properties.categoryTwo = { type: 'integer', enum: values };
+  // ---------------------------------------------------------------------------
+  // Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Post()
+  async create(
+    @Body() photoDto: { name: string; description?: string; keywords?: string },
+  ) {
+    return this.photoService.create(photoDto);
+  }
+
+  /** Solo consulta: devuelve la foto si ya fue generada. */
+  @Get('search')
+  async findByName(
+    @Query('name') name: string,
+    @Query('platform') platform?: string,
+  ) {
+    const stored = await this.photoService.findByName(name);
+    if (stored.length === 0) {
+      throw new NotFoundException(
+        `${name} no ha sido generada. Usa POST /photos/search con la configuración.`,
+      );
+    }
+    return stored.map((item) => this.adaptForPlatform(item, platform));
+  }
+
+  /**
+   * Lo que usa la extensión al hacer clic: devuelve la foto guardada o, si no
+   * existe, la genera con la configuración enviada desde el popup.
+   */
+  @Post('search')
+  async search(@Body() body: SearchRequest) {
+    const { name, platform, config } = body ?? ({} as SearchRequest);
+    if (!name) {
+      throw new BadRequestException('Falta el nombre del archivo');
+    }
+
+    const stored = await this.photoService.findByName(name);
+    if (stored.length > 0) {
+      return stored.map((item) => this.adaptForPlatform(item, platform));
+    }
+
+    const saved = await this.generate(name, this.validateConfig(config));
+    return [this.adaptForPlatform(saved, platform)];
+  }
+
+  /** Genera de una vez todos los archivos que están en /public. */
+  @Post('load-data')
+  async loadDataPhotos(@Body() body: { config?: GenerationConfig }) {
+    const config = this.validateConfig(body?.config);
+    const entries = await fs.promises.readdir(PUBLIC_DIR, { withFileTypes: true });
+    const mediaFiles = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((file) => MEDIA_EXTENSIONS.includes(path.extname(file).toLowerCase()));
+
+    // Un archivo que falle no detiene el resto del lote
+    const failed: { file: string; error: string }[] = [];
+    let skipped = 0;
+    for (const fileName of mediaFiles) {
+      try {
+        const stored = await this.photoService.findByName(fileName);
+        if (stored.length > 0) {
+          skipped++;
+          continue;
+        }
+        await this.generate(fileName, config);
+      } catch (error) {
+        console.error(`Error procesando ${fileName}:`, error.message);
+        failed.push({ file: fileName, error: error.message });
+      }
     }
 
     return {
-      type: 'json_schema' as const,
-      json_schema: {
-        name: 'stock_metadata',
-        strict: true,
-        schema: {
-          type: 'object',
-          properties,
-          required: Object.keys(properties),
-          additionalProperties: false,
-        },
-      },
+      status: failed.length === 0 ? 'success' : 'partial',
+      message: `Se procesaron ${mediaFiles.length - failed.length} de ${mediaFiles.length} archivos (${skipped} ya existían)`,
+      total: mediaFiles.length,
+      skipped,
+      failed,
     };
   }
 
-  private extractIAKeywordsFromFilename(fileName: string): string {
-    const baseName = path.parse(fileName).name.toLowerCase();
-
-    const tokens = baseName
-      .split('_')
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0)
-      .filter((token) => token !== 'copyspace')
-      .filter((token) => !/^\d+$/.test(token));
-
-    const uniqueTokens = Array.from(new Set(tokens));
-
-    return uniqueTokens.length > 0 ? uniqueTokens.join(', ') : this.keywords;
+  /** Estado del backend (lo usa el popup para mostrar si está conectado). */
+  @Get('test-config')
+  async getDataTest() {
+    return {
+      status: 'success',
+      model: this.model,
+      hasOpenAIKey: !!this.configService.get<string>('OPENAI_API_KEY'),
+      timestamp: new Date().toISOString(),
+    };
   }
 
-  private generateIAPrompt(baseKeywords: string): string {
-    const descriptionFormat = `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Adobe Stock. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions. Do not mention location, date, or any real-world reference.`;
+  // ---------------------------------------------------------------------------
+  // Generación
+  // ---------------------------------------------------------------------------
 
-    return `
-The attached file is an AI-generated image.
+  private async generate(name: string, config: GenerationConfig) {
+    if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+      throw new BadRequestException(`Nombre de archivo inválido: ${name}`);
+    }
 
-Analyze the attached image and generate UNIQUE metadata based EXCLUSIVELY on visible elements.
+    const filePath = path.join(PUBLIC_DIR, name);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException(`No encontré ${name} en /public.`);
+    }
 
-CRITICAL RULES (MANDATORY):
-- DO NOT assume information that is not clearly visible in the image.
-- DO NOT reuse common stock description structures.
-- Vary the syntactic structure of the description for each image — do not always follow the same sentence pattern.
-- If an element is not clearly evident, DO NOT include it as a keyword.
-- Avoid filler words and generic terms.
-- This is an AI-generated image. Do not include location, date, photographer, or any real-world reference in the description or keywords.
-- Do not create titles, descriptions, or keywords that imply real news coverage, current events, conflicts, disasters, politics, or journalistic reporting.
+    const isVideo = name.toLowerCase().endsWith('.mp4');
+    console.log(`Generando ${name} (${isVideo ? 'video' : 'foto'})`);
 
-${this.keywordRules}
+    const prompt = this.generatePrompt(config, isVideo);
+    let messageContent: any[];
 
-Generate the following:
+    if (isVideo) {
+      const framePaths = await this.photoService.extractVideoFrames(filePath, 5);
+      messageContent = [
+        { type: 'text', text: prompt },
+        {
+          type: 'text',
+          text: `The following ${framePaths.length} images are frames from the SAME VIDEO in chronological order (beginning, middle, end). Use all of them to generate metadata for the whole video:`,
+        },
+      ];
+      for (let i = 0; i < framePaths.length; i++) {
+        const base64Frame = await this.photoService.convertImageToBase64(framePaths[i]);
+        messageContent.push({ type: 'text', text: `Frame ${i + 1} of ${framePaths.length}:` });
+        messageContent.push({ type: 'image_url', image_url: { url: base64Frame } });
+      }
+    } else {
+      const compressedPath = await this.photoService.compressImage(filePath);
+      const base64Image = await this.photoService.convertImageToBase64(compressedPath);
+      messageContent = [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: base64Image, detail: 'high' } },
+      ];
+    }
 
-1. TITLE
-- In English
-- Short, precise, and factual
-- Must include at least ONE specific and clearly visible visual detail (object, action, color, weather, perspective, time of day, or emotion).
+    const completion = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [{ role: 'user', content: messageContent }],
+      response_format: this.buildResponseSchema(),
+    });
+    const message = completion.choices[0]?.message;
+    if (message?.refusal) {
+      throw new Error(`El modelo rechazó ${name}: ${message.refusal}`);
+    }
 
-2. DESCRIPTION
-- ${descriptionFormat}
-- Must mention at least TWO concrete visual details observable in the image.
-- Use descriptive and natural language, not commercial.
+    const metadata = this.photoService.parseMetadata(message?.content, name);
 
-3. KEYWORDS
-- Between ${this.minKeywords} and ${this.maxKeywords} keywords in English. Aim for ${this.maxKeywords} when the image supports it; if there are fewer clearly relevant terms, stop at ${this.minKeywords} rather than adding filler.
-- All lowercase
-- No accents or special characters
-- Separated by commas
-- Ordered by relevance (most important first)
-- Use these base keywords as contextual anchor for generation: ${baseKeywords}
-- Prioritize base keywords when they are visually consistent with the image
-- Do not force unrelated base keywords if they are not visible
+    // Normaliza en código: minúsculas, sin tildes, sin duplicados,
+    // keywords base primero y máximo 49.
+    const keywords = this.photoService.normalizeKeywords(
+      metadata.keywords,
+      config.keywords.split(','),
+      this.maxKeywords,
+    );
 
-Keywords should cover, when relevant:
-- visible physical elements
-- actions or states
-- environment and location
-- concepts or emotions
-- potential commercial or editorial uses
+    console.log({ name, title: metadata.title, keywords });
 
-RESPONSE FORMAT:
-Respond ONLY with valid JSON, no additional text, following EXACTLY this structure:
-
-{
-  "title": "",
-  "description": "",
-  "keywords": ""
-}
-
-Example of expected output:
-{
-  "title": "Roasted Coffee Beans in Ceramic Bowl at Morning Light",
-  "description": "Dark roasted coffee beans fill a handmade ceramic bowl on a rustic wooden surface, lit by warm natural morning light.",
-  "keywords": "coffee beans, roasted, ceramic bowl, coffee, wooden, rustic, morning light, warm, dark, aroma, cafe, beverage, natural, texture, close up, macro, brown, surface"
-}
-
-Any non-compliance with the above rules invalidates the response.
-`;
+    return this.photoService.create({
+      name,
+      title: metadata.title,
+      description: metadata.description,
+      keywords,
+      categoryOne: metadata.categoryOne,
+      categoryTwo: metadata.categoryTwo,
+      editorial: config.editorial,
+    });
   }
 
-  private generatePrompt(isEditorial: boolean, isVideo: boolean): string {
-    const descriptionFormat = isEditorial
-      ? `An editorial description in English (maximum 200 characters). The format MUST be exactly: "${this.place} - ${this.dateEditorial} - [generated title]". Do not include opinions, interpretations, or assumptions.`
+  private generatePrompt(config: GenerationConfig, isVideo: boolean): string {
+    const descriptionFormat = config.editorial
+      ? `An editorial description in English (maximum 200 characters). The format MUST be exactly: "${config.place} - ${config.date} - [generated title]". Do not include opinions, interpretations, or assumptions.`
       : `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Shutterstock, Adobe Stock, and Alamy. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions.`;
 
     const mediaInstruction = isVideo
@@ -213,7 +283,7 @@ Generate the following:
 - No accents or special characters
 - Separated by commas
 - Ordered by relevance (most important first)
-- Start with these base keywords exactly as written (they may be multi-word place names; this is the only exception to the two-word limit): ${this.keywords}
+- Start with these base keywords exactly as written (they may be multi-word place names; this is the only exception to the two-word limit): ${config.keywords}
 
 Keywords should cover, when relevant:
 - visible physical elements
@@ -222,7 +292,7 @@ Keywords should cover, when relevant:
 - concepts or emotions
 - potential commercial or editorial uses
 
-Reference location: ${this.place}
+${config.place ? `Reference location: ${config.place}` : ''}
 
 4. CATEGORIES
 Select:
@@ -233,7 +303,7 @@ Use EXCLUSIVELY the numeric values from the following list, based on the predomi
 
 ${JSON.stringify(this.categories, null, 2)}
 
-${this.additionalNotes ? `Additional notes: ${this.additionalNotes}` : ''}
+${config.notes ? `Additional notes: ${config.notes}` : ''}
 
 RESPONSE FORMAT:
 Respond ONLY with valid JSON, no additional text, following EXACTLY this structure:
@@ -259,220 +329,76 @@ Any non-compliance with the above rules invalidates the response.
 `;
   }
 
-  constructor(
-    private readonly photoService: PhotoService,
-    private readonly configService: ConfigService,
-  ) {
-    this.model =
-      this.configService.get<string>('OPENAI_MODEL') || 'gpt-4.1-mini';
-    this.openai = new OpenAI({
-      apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-      dangerouslyAllowBrowser: true,
-    });
-  }
-
-  @Post()
-  async create(
-    @Body() photoDto: { name: string; description?: string; keywords?: string },
-  ) {
-    return this.photoService.create(photoDto);
-  }
-
-  @Get('search')
-  async findByName(@Query('name') name: string) {
-    const data = await this.photoService.findByName(name);
-    if (data.length > 0) {
-      const normalizeEditorialDescription = (value?: string) => {
-        if (!value) {
-          return value;
-        }
-
-        const parts = value.split(' - ');
-        if (parts.length >= 3) {
-          return parts.slice(2).join(' - ').trim();
-        }
-
-        return value;
-      };
-
-      const toPlainObject = (item: any) => {
-        if (item && typeof item.toObject === 'function') {
-          return item.toObject();
-        }
-
-        return item;
-      };
-
-      return data.map((item: any) => {
-        const plainItem = toPlainObject(item);
-
-        return {
-          ...plainItem,
-          description: this.removeEditorial
-            ? normalizeEditorialDescription(plainItem.description)
-            : plainItem.description,
-          editorial: this.removeEditorial ? false : plainItem.editorial,
-          };
-
-      });
-    } else {
-      const filePath = `./public/${this.folderPhotos}/${name}`;
-      const isVideo = name.toLowerCase().endsWith('.mp4');
-
-      console.log(`Procesando archivo: ${name}`);
-      console.log(`Es video: ${isVideo}`);
-      console.log(`Path completo: ${filePath}`);
-
-      let messageContent: any[] = [];
-      const iaBaseKeywords = this.isIA
-        ? this.extractIAKeywordsFromFilename(name)
-        : this.keywords;
-
-      if (isVideo) {
-        // Si es video, extraer múltiples frames
-        console.log('Extrayendo múltiples frames del video...');
-        const framePaths = await this.photoService.extractVideoFrames(filePath, 5);
-
-        // Agregar texto explicativo
-        messageContent.push({
-          type: 'text',
-          text: this.isIA
-            ? this.generateIAPrompt(iaBaseKeywords)
-            : this.generatePrompt(this.isEditorial, isVideo),
-        });
-
-        // Agregar contexto de que son frames secuenciales
-        messageContent.push({
-          type: 'text',
-          text: `Las siguientes 5 imágenes son frames extraídos del MISMO VIDEO en orden cronológico (inicio, medio y final). Analiza todos los frames para generar metadata completa del video:`,
-        });
-
-        // Convertir y agregar cada frame
-        for (let i = 0; i < framePaths.length; i++) {
-          const base64Frame = await this.photoService.convertImageToBase64(framePaths[i]);
-          messageContent.push({
-            type: 'text',
-            text: `Frame ${i + 1} de ${framePaths.length}:`,
-          });
-          messageContent.push({
-            type: 'image_url',
-            image_url: { url: base64Frame },
-          });
-        }
-      } else {
-        // Si es imagen, comprimir normalmente
-        console.log('Comprimiendo imagen...');
-        const compressedPath = await this.photoService.compressImage(filePath);
-        const base64Image = await this.photoService.convertImageToBase64(compressedPath);
-
-        messageContent = [
-          {
-            type: 'text',
-            text: this.isIA
-              ? this.generateIAPrompt(iaBaseKeywords)
-              : this.generatePrompt(this.isEditorial, isVideo),
-          },
-          {
-            type: 'image_url',
-            image_url: { url: base64Image, detail: 'high' },
-          },
-        ];
-      }
-
-      const completion = await this.openai.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'user',
-            content: messageContent,
-          },
-        ],
-        // Para fotos IA no se piden categorías
-        response_format: this.buildResponseSchema(!this.isIA),
-      });
-      const message = completion.choices[0]?.message;
-      if (message?.refusal) {
-        throw new Error(`El modelo rechazó ${name}: ${message.refusal}`);
-      }
-
-      const metadata = this.photoService.parseMetadata(message?.content, name);
-      const { title, description, categoryOne, categoryTwo } = metadata;
-
-      // Normaliza en código: minúsculas, sin tildes, sin duplicados,
-      // keywords base primero (solo fotos normales) y máximo 49.
-      const keywords = this.photoService.normalizeKeywords(
-        metadata.keywords,
-        this.isIA ? [] : this.keywords.split(','),
-        this.maxKeywords,
-      );
-
-      console.log({ title, description, keywords, categoryOne, categoryTwo });
-
-      const dataSaved = await this.photoService.create({
-        name,
-        title,
-        description,
-        keywords,
-        categoryOne,
-        categoryTwo,
-        editorial: this.isEditorial,
-        isIA: this.isIA ? true : null,
-      });
-      return [dataSaved];
-    }
-  }
-
-  @Get('load-data')
-  async loadDataPhotos() {
-    const folderPath = path.resolve(`./public/${this.folderPhotos}`);
-
-    if (!fs.existsSync(folderPath)) {
-      return {
-        status: 'error',
-        message: `No existe la carpeta: ${folderPath}`,
-      };
-    }
-
-    const files = await fs.promises.readdir(folderPath);
-    const mediaFiles = files.filter((file) => {
-      const ext = path.extname(file).toLowerCase();
-      return ['.jpg', '.jpeg', '.png', '.webp', '.mp4'].includes(ext);
-    });
-
-    // Un archivo que falle no detiene el resto del lote
-    const failed: { file: string; error: string }[] = [];
-    for (const fileName of mediaFiles) {
-      try {
-        await this.findByName(fileName);
-      } catch (error) {
-        console.error(`Error procesando ${fileName}:`, error.message);
-        failed.push({ file: fileName, error: error.message });
-      }
-    }
+  private buildResponseSchema() {
+    const values = this.categories.map((c) => c.value);
+    const properties = {
+      title: { type: 'string' },
+      description: { type: 'string' },
+      keywords: {
+        type: 'string',
+        description: 'Comma-separated keywords, most relevant first',
+      },
+      categoryOne: { type: 'integer', enum: values },
+      categoryTwo: { type: 'integer', enum: values },
+    };
 
     return {
-      status: failed.length === 0 ? 'success' : 'partial',
-      message: `Se procesaron ${mediaFiles.length - failed.length} de ${mediaFiles.length} archivos`,
-      total: mediaFiles.length,
-      failed,
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'stock_metadata',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties,
+          required: Object.keys(properties),
+          additionalProperties: false,
+        },
+      },
     };
   }
 
-  @Get('test-config')
-  async getDataTest() {
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  private validateConfig(config?: GenerationConfig): GenerationConfig {
+    if (!config) {
+      throw new BadRequestException(
+        'Falta la configuración. Ábrela en el popup de la extensión.',
+      );
+    }
+
+    const editorial = !!config.editorial;
+    const place = config.place?.trim() ?? '';
+    const date = config.date?.trim() ?? '';
+    if (editorial && (!place || !date)) {
+      throw new BadRequestException('Para fotos editoriales el lugar y la fecha son obligatorios.');
+    }
+
     return {
-      status: 'success',
-      message: 'Environment variables loaded successfully',
-      config: {
-        isEditorial: this.isEditorial,
-        folderPhotos: this.folderPhotos,
-        place: this.place,
-        dateEditorial: this.dateEditorial,
-        keywords: this.keywords,
-        hasOpenAIKey: !!this.configService.get<string>('OPENAI_API_KEY'),
-        openAIKeyLength: this.configService.get<string>('OPENAI_API_KEY')?.length || 0,
-      },
-      timestamp: new Date().toISOString()
+      keywords: config.keywords?.trim() ?? '',
+      editorial,
+      place,
+      date,
+      notes: config.notes?.trim() ?? '',
+    };
+  }
+
+  /**
+   * Adapta lo guardado a la plataforma que pregunta: en las que no marcan
+   * editorial se quita "lugar - fecha - " de la descripción.
+   */
+  private adaptForPlatform(item: any, platform?: string) {
+    const plain = typeof item?.toObject === 'function' ? item.toObject() : item;
+    if (!plain.editorial || !platform || !PLATFORMS_WITHOUT_EDITORIAL.has(platform)) {
+      return plain;
+    }
+
+    const parts = (plain.description ?? '').split(' - ');
+    return {
+      ...plain,
+      description: parts.length >= 3 ? parts.slice(2).join(' - ').trim() : plain.description,
+      editorial: false,
     };
   }
 }
