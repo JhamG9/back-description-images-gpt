@@ -12,11 +12,11 @@ export class PhotoController {
   // Variables de desarrollo - cambiar aquí para hot reload
   isEditorial = false; // Si la foto es de tipo editorial o comercial
   removeEditorial = true; // Si es true, elimina ubicacion y fecha de descripciones editoriales
-  folderPhotos = 'ia-test'; // fotos en la carpeta /public/
-  keywords = 'coffe, colombian coffe, colombia'; // Palabras claves base
-  place = 'Radual del Gayabero, Guaviare, Colombia'; // Lugar de las fotos  
+  folderPhotos = 'las-moyas'; // fotos en la carpeta /public/
+  keywords = 'bogota, las moyas, moyas bogota, eastern hills, colombia, paramo, las moyas paramo, mountain, panoramic'; // Palabras claves base
+  place = 'Las Moyas Trail, Bogotá, Colombia'; // Lugar de las fotos  
   dateEditorial = 'May 1 2026';
-  isIA = true;
+  isIA = false;
   // dateEditorial = '';
 
   // additionalNotes = 'es una manguera tirando agua, entonces es importante incluir palabras relacionadas con agua y cuidado del agua, conservación, naturaleza, etc. para mejorar la relevancia en búsquedas relacionadas con esos temas.';
@@ -43,7 +43,67 @@ export class PhotoController {
     { "label": "Transportation", "value": 19 }
   ];
 
-  private generateIAPrompt(): string {
+  // Modelo de visión configurable desde .env (OPENAI_MODEL)
+  private readonly model: string;
+
+  // Adobe Stock acepta máximo 49 keywords; el resto 50. Usamos 49 para todos.
+  private readonly maxKeywords = 49;
+  private readonly minKeywords = 40;
+
+  private readonly keywordRules = `KEYWORD RULES:
+- Use real search terms that buyers actually type on stock platforms.
+- Each keyword is either a single word OR a common two-word phrase (e.g., "coffee beans", "aerial view", "street food"). Never more than two words.
+- Use a two-word phrase only when it is an established search term; otherwise use single words.
+- DO NOT invent words or merge words into new compound terms.
+- No duplicates or near-duplicates (singular and plural of the same word count as duplicates).`;
+
+  private buildResponseSchema(withCategories: boolean) {
+    const properties: Record<string, any> = {
+      title: { type: 'string' },
+      description: { type: 'string' },
+      keywords: {
+        type: 'string',
+        description: 'Comma-separated keywords, most relevant first',
+      },
+    };
+
+    if (withCategories) {
+      const values = this.categories.map((c) => c.value);
+      properties.categoryOne = { type: 'integer', enum: values };
+      properties.categoryTwo = { type: 'integer', enum: values };
+    }
+
+    return {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'stock_metadata',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties,
+          required: Object.keys(properties),
+          additionalProperties: false,
+        },
+      },
+    };
+  }
+
+  private extractIAKeywordsFromFilename(fileName: string): string {
+    const baseName = path.parse(fileName).name.toLowerCase();
+
+    const tokens = baseName
+      .split('_')
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0)
+      .filter((token) => token !== 'copyspace')
+      .filter((token) => !/^\d+$/.test(token));
+
+    const uniqueTokens = Array.from(new Set(tokens));
+
+    return uniqueTokens.length > 0 ? uniqueTokens.join(', ') : this.keywords;
+  }
+
+  private generateIAPrompt(baseKeywords: string): string {
     const descriptionFormat = `A natural and human description in English (maximum 200 characters), optimized for stock platforms such as Adobe Stock. Avoid generic phrases, promotional language, and repetitive structures typical of stock descriptions. Do not mention location, date, or any real-world reference.`;
 
     return `
@@ -57,16 +117,10 @@ CRITICAL RULES (MANDATORY):
 - Vary the syntactic structure of the description for each image — do not always follow the same sentence pattern.
 - If an element is not clearly evident, DO NOT include it as a keyword.
 - Avoid filler words and generic terms.
-- Do not force keywords just to reach the target count.
 - This is an AI-generated image. Do not include location, date, photographer, or any real-world reference in the description or keywords.
+- Do not create titles, descriptions, or keywords that imply real news coverage, current events, conflicts, disasters, politics, or journalistic reporting.
 
-STRICT KEYWORD RULES:
-- Use ONLY real, individual words commonly used in stock platforms.
-- DO NOT combine words to create new compound terms.
-- DO NOT invent words or merge concepts.
-- DO NOT use long or artificial words.
-- If a concept requires two words, split it into individual keywords (e.g., "animal", "conservation").
-- Each keyword must stand alone as a valid search term.
+${this.keywordRules}
 
 Generate the following:
 
@@ -81,14 +135,12 @@ Generate the following:
 - Use descriptive and natural language, not commercial.
 
 3. KEYWORDS
-- Between 45 and 50 keywords in English
+- Between ${this.minKeywords} and ${this.maxKeywords} keywords in English. Aim for ${this.maxKeywords} when the image supports it; if there are fewer clearly relevant terms, stop at ${this.minKeywords} rather than adding filler.
 - All lowercase
 - No accents or special characters
 - Separated by commas
-- Use ONLY individual words (no compound phrases)
-- No duplicates or redundant variations
 - Ordered by relevance (most important first)
-- Use these base keywords as contextual anchor for generation: ${this.keywords}
+- Use these base keywords as contextual anchor for generation: ${baseKeywords}
 - Prioritize base keywords when they are visually consistent with the image
 - Do not force unrelated base keywords if they are not visible
 
@@ -112,7 +164,7 @@ Example of expected output:
 {
   "title": "Roasted Coffee Beans in Ceramic Bowl at Morning Light",
   "description": "Dark roasted coffee beans fill a handmade ceramic bowl on a rustic wooden surface, lit by warm natural morning light.",
-  "keywords": "coffee, beans, roasted, ceramic, bowl, wooden, rustic, morning, light, warm, dark, aroma, cafe, beverage, natural, texture, close, macro, brown, surface"
+  "keywords": "coffee beans, roasted, ceramic bowl, coffee, wooden, rustic, morning light, warm, dark, aroma, cafe, beverage, natural, texture, close up, macro, brown, surface"
 }
 
 Any non-compliance with the above rules invalidates the response.
@@ -139,16 +191,9 @@ CRITICAL RULES (MANDATORY):
 - Vary the syntactic structure of the description for each ${isVideo ? 'video' : 'image'} — do not always follow the same sentence pattern.
 - If an element is not clearly evident, DO NOT include it as a keyword.
 - Avoid filler words and generic terms.
-- Do not force keywords just to reach the target count.
 ${isVideo ? '- For videos, include keywords related to movement, action, and the temporal sequence visible in the frames.' : ''}
 
-STRICT KEYWORD RULES:
-- Use ONLY real, individual words commonly used in stock platforms.
-- DO NOT combine words to create new compound terms.
-- DO NOT invent words or merge concepts.
-- DO NOT use long or artificial words.
-- If a concept requires two words, split it into individual keywords (e.g., "animal", "conservation").
-- Each keyword must stand alone as a valid search term.
+${this.keywordRules}
 
 Generate the following:
 
@@ -163,14 +208,12 @@ Generate the following:
 - Use descriptive and natural language, not commercial.
 
 3. KEYWORDS
-- Between 45 and 50 keywords in English
+- Between ${this.minKeywords} and ${this.maxKeywords} keywords in English, counting the base keywords. Aim for ${this.maxKeywords} when the image supports it; if there are fewer clearly relevant terms, stop at ${this.minKeywords} rather than adding filler.
 - All lowercase
 - No accents or special characters
 - Separated by commas
-- Use ONLY individual words (no compound phrases)
-- No duplicates or redundant variations
 - Ordered by relevance (most important first)
-- Must include the following words: ${this.keywords}
+- Start with these base keywords exactly as written (they may be multi-word place names; this is the only exception to the two-word limit): ${this.keywords}
 
 Keywords should cover, when relevant:
 - visible physical elements
@@ -207,7 +250,7 @@ Example of expected output:
 {
   "title": "Aerial View of Green Amazon Rainforest at Sunrise",
   "description": "Dense tropical forest canopy stretching across the horizon under golden morning light in the Colombian Amazon.",
-  "keywords": "amazon, rainforest, aerial, canopy, tropical, forest, sunrise, green, colombia, nature, jungle, biodiversity, environment, landscape, morning, light, trees, wilderness, ecosystem, conservation",
+  "keywords": "amazon, rainforest, aerial view, canopy, tropical forest, sunrise, green, colombia, nature, jungle, biodiversity, environment, landscape, morning light, trees, wilderness, ecosystem, conservation",
   "categoryOne": 12,
   "categoryTwo": 5
 }
@@ -216,11 +259,12 @@ Any non-compliance with the above rules invalidates the response.
 `;
   }
 
-  // TODO: Cambiar respuesta a JSON con formato: {title: '', keywords: ''}
   constructor(
     private readonly photoService: PhotoService,
     private readonly configService: ConfigService,
   ) {
+    this.model =
+      this.configService.get<string>('OPENAI_MODEL') || 'gpt-4.1-mini';
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
       dangerouslyAllowBrowser: true,
@@ -232,11 +276,6 @@ Any non-compliance with the above rules invalidates the response.
     @Body() photoDto: { name: string; description?: string; keywords?: string },
   ) {
     return this.photoService.create(photoDto);
-  }
-
-  @Get()
-  async findAll() {
-    return this.photoService.findAll(); // Llama al servicio para obtener todas las fotos
   }
 
   @Get('search')
@@ -285,6 +324,9 @@ Any non-compliance with the above rules invalidates the response.
       console.log(`Path completo: ${filePath}`);
 
       let messageContent: any[] = [];
+      const iaBaseKeywords = this.isIA
+        ? this.extractIAKeywordsFromFilename(name)
+        : this.keywords;
 
       if (isVideo) {
         // Si es video, extraer múltiples frames
@@ -294,7 +336,9 @@ Any non-compliance with the above rules invalidates the response.
         // Agregar texto explicativo
         messageContent.push({
           type: 'text',
-          text: this.isIA ? this.generateIAPrompt() : this.generatePrompt(this.isEditorial, isVideo),
+          text: this.isIA
+            ? this.generateIAPrompt(iaBaseKeywords)
+            : this.generatePrompt(this.isEditorial, isVideo),
         });
 
         // Agregar contexto de que son frames secuenciales
@@ -324,28 +368,43 @@ Any non-compliance with the above rules invalidates the response.
         messageContent = [
           {
             type: 'text',
-            text: this.isIA ? this.generateIAPrompt() : this.generatePrompt(this.isEditorial, isVideo),
+            text: this.isIA
+              ? this.generateIAPrompt(iaBaseKeywords)
+              : this.generatePrompt(this.isEditorial, isVideo),
           },
           {
             type: 'image_url',
-            image_url: { url: base64Image },
+            image_url: { url: base64Image, detail: 'high' },
           },
         ];
       }
 
-      const completion: any = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const completion = await this.openai.chat.completions.create({
+        model: this.model,
         messages: [
           {
             role: 'user',
             content: messageContent,
           },
         ],
+        // Para fotos IA no se piden categorías
+        response_format: this.buildResponseSchema(!this.isIA),
       });
-      const dataResponse = completion.choices[0].message.content;
+      const message = completion.choices[0]?.message;
+      if (message?.refusal) {
+        throw new Error(`El modelo rechazó ${name}: ${message.refusal}`);
+      }
 
-      const { title, description, keywords, categoryOne, categoryTwo } =
-        this.photoService.extractTitleAndKeywords(dataResponse);
+      const metadata = this.photoService.parseMetadata(message?.content, name);
+      const { title, description, categoryOne, categoryTwo } = metadata;
+
+      // Normaliza en código: minúsculas, sin tildes, sin duplicados,
+      // keywords base primero (solo fotos normales) y máximo 49.
+      const keywords = this.photoService.normalizeKeywords(
+        metadata.keywords,
+        this.isIA ? [] : this.keywords.split(','),
+        this.maxKeywords,
+      );
 
       console.log({ title, description, keywords, categoryOne, categoryTwo });
 
@@ -361,11 +420,6 @@ Any non-compliance with the above rules invalidates the response.
       });
       return [dataSaved];
     }
-  }
-
-  @Put('sold/:id')
-  async markAsSold(@Param('id') id: string) {
-    return this.photoService.markAsSold(id);
   }
 
   @Get('load-data')
@@ -385,14 +439,22 @@ Any non-compliance with the above rules invalidates the response.
       return ['.jpg', '.jpeg', '.png', '.webp', '.mp4'].includes(ext);
     });
 
+    // Un archivo que falle no detiene el resto del lote
+    const failed: { file: string; error: string }[] = [];
     for (const fileName of mediaFiles) {
-      await this.findByName(fileName);
+      try {
+        await this.findByName(fileName);
+      } catch (error) {
+        console.error(`Error procesando ${fileName}:`, error.message);
+        failed.push({ file: fileName, error: error.message });
+      }
     }
 
     return {
-      status: 'success',
-      message: `Se procesaron ${mediaFiles.length} archivos`,
+      status: failed.length === 0 ? 'success' : 'partial',
+      message: `Se procesaron ${mediaFiles.length - failed.length} de ${mediaFiles.length} archivos`,
       total: mediaFiles.length,
+      failed,
     };
   }
 

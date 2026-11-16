@@ -58,7 +58,7 @@ export class PhotoService {
             timestamps: [timestamps[i]],
             filename: fileName,
             folder: this.compressedFolder,
-            size: '800x?'
+            size: '1024x?'
           })
           .on('end', () => {
             console.log(`Frame ${i + 1} extraído: ${outputPath}`);
@@ -158,8 +158,11 @@ export class PhotoService {
 
     try {
       await sharp(imagePath)
-        .resize(800) // Redimensionar a un ancho máximo de 800px (ajústalo según tu necesidad)
-        .jpeg({ quality: 50 }) // Convertir a JPEG con 70% de calidad
+        // 1024px y calidad 75: el modelo distingue mejor los detalles
+        // (texturas, letreros, especies) a un costo extra pequeño
+        .rotate() // respeta la orientación EXIF
+        .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 75 })
         .toFile(outputPath);
 
       console.log(`Imagen comprimida: ${outputPath}`);
@@ -208,29 +211,94 @@ export class PhotoService {
     }
   }
 
-  extractTitleAndKeywords(inputString) {
-    try {
-        // Buscar el JSON dentro del string usando una expresión regular
-        const jsonMatch = inputString.match(/\{.*?\}/s);
-        
-        if (jsonMatch) {
-            const jsonString = jsonMatch[0]; // Obtener el JSON como string
-            const jsonObject = JSON.parse(jsonString); // Convertirlo en objeto
-            
-            // Extraer title y keywords si existen
-            return {
-                title: jsonObject.title || "",
-                description: jsonObject.description || "",
-                keywords: jsonObject.keywords || "",
-                categoryOne: jsonObject.categoryOne || "",
-                categoryTwo: jsonObject.categoryTwo || "",
-            };
-        }
-    } catch (error) {
-        console.error("Error parsing JSON:", error);
+  /**
+   * Parsea la respuesta JSON del modelo (structured outputs) y valida que
+   * venga lo mínimo necesario. Lanza error en vez de guardar datos vacíos.
+   */
+  parseMetadata(
+    content: string | null | undefined,
+    fileName: string,
+  ): {
+    title: string;
+    description: string;
+    keywords: string;
+    categoryOne?: number;
+    categoryTwo?: number;
+  } {
+    if (!content) {
+      throw new Error(`Respuesta vacía del modelo para ${fileName}`);
     }
 
-    return { title: "", keywords: "" };
-}
+    let data: any;
+    try {
+      data = JSON.parse(content);
+    } catch {
+      throw new Error(`JSON inválido del modelo para ${fileName}: ${content.slice(0, 200)}`);
+    }
 
+    const title = typeof data.title === 'string' ? data.title.trim() : '';
+    const keywords = typeof data.keywords === 'string' ? data.keywords.trim() : '';
+    if (!title || !keywords) {
+      throw new Error(`Faltan title o keywords en la respuesta para ${fileName}`);
+    }
+
+    return {
+      title,
+      description: typeof data.description === 'string' ? data.description.trim() : '',
+      keywords,
+      categoryOne: Number.isInteger(data.categoryOne) ? data.categoryOne : undefined,
+      categoryTwo: Number.isInteger(data.categoryTwo) ? data.categoryTwo : undefined,
+    };
+  }
+
+  /**
+   * Limpia las keywords en código para no depender de que el modelo obedezca:
+   * minúsculas, sin tildes ni caracteres especiales, keywords base primero,
+   * máximo 2 palabras por keyword generada, sin duplicados (incluye
+   * singular/plural) y recortadas a `max`.
+   */
+  normalizeKeywords(raw: string, baseKeywords: string[] = [], max = 49): string {
+    const clean = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Clave para detectar duplicados: "mountains" y "mountain" son lo mismo
+    const dedupeKey = (value: string) =>
+      value
+        .split(' ')
+        .map((word) => (word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word))
+        .join(' ');
+
+    const result: string[] = [];
+    const seen = new Set<string>();
+    const add = (keyword: string) => {
+      const key = dedupeKey(keyword);
+      if (!keyword || seen.has(key)) return;
+      seen.add(key);
+      result.push(keyword);
+    };
+
+    // Las base se respetan tal cual (pueden ser nombres de lugar de 3+ palabras)
+    baseKeywords.map(clean).forEach(add);
+
+    for (const item of raw.split(',')) {
+      const keyword = clean(item);
+      if (!keyword) continue;
+      const words = keyword.split(' ');
+      if (words.length <= 2) {
+        add(keyword);
+      } else {
+        // Frase demasiado larga: se separa en palabras sueltas sin conectores
+        const stopWords = new Set(['a', 'an', 'the', 'of', 'in', 'on', 'at', 'under', 'over', 'with', 'and', 'or', 'for', 'to', 'by', 'from']);
+        words.filter((word) => !stopWords.has(word)).forEach(add);
+      }
+    }
+
+    return result.slice(0, max).join(', ');
+  }
 }
